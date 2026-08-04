@@ -16,6 +16,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 
 // Routes
+import authRouter from './routes/auth';
 import usersRouter from './routes/users';
 import contentRouter from './routes/content';
 import subscriptionsRouter from './routes/subscriptions';
@@ -23,6 +24,7 @@ import familyRouter from './routes/family';
 import commentsRouter from './routes/comments';
 import newsletterRouter from './routes/newsletter';
 import analyticsRouter from './routes/analytics';
+import webhookRouter from './routes/webhook';
 
 const app = express();
 
@@ -48,13 +50,32 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // ── Routes ─────────────────────────────────────────────────────────────────
+// Auth routes (public)
+app.use('/api/auth', authRouter);
+
+// User management (requires auth)
 app.use('/api/users', authMiddleware(), usersRouter);
+
+// Content delivery (public)
 app.use('/api/content', contentRouter);
+
+// Subscription management (requires auth)
 app.use('/api/subscriptions', authMiddleware(), subscriptionsRouter);
+
+// Family management (requires auth)
 app.use('/api/family', authMiddleware(), familyRouter);
+
+// Comments (public list, auth for create)
 app.use('/api/comments', commentsRouter);
+
+// Newsletter (public subscribe)
 app.use('/api/newsletter', newsletterRouter);
+
+// Analytics (requires auth)
 app.use('/api/analytics', authMiddleware(), analyticsRouter);
+
+// Directus webhooks (no auth — verified by signature)
+app.use('/api/webhooks/directus', webhookRouter);
 
 // ── Error Handling ─────────────────────────────────────────────────────────
 app.use(errorHandler);
