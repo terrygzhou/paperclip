@@ -1,0 +1,23 @@
+{
+  "name": "happygrandma-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "为即将迈入老年或者已经退休的老人提供养老生活的积极思想、创意和活动",
+  "scripts": {
+    "dev": "concurrently \"pnpm -r --parallel dev\"",
+    "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @happygrandma/db db:generate",
+    "db:migrate": "pnpm --filter @happygrandma/db db:migrate",
+    "db:seed": "pnpm --filter @happygrandma/db db:seed",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

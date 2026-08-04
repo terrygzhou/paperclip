@@ -1,0 +1,28 @@
+.
+
+packages/*/node_modules/
+server/node_modules/
+ui/node_modules/
+node_modules/
+
+# Build output
+packages/*/dist/
+server/dist/
+ui/.next/
+ui/dist/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs
+logs/
+*.log
