@@ -471,6 +471,8 @@ type ResponsibleUserSnapshot = {
   activeMembership: { companyId: string; membershipRole?: string | null; status?: string } | null;
 };
 
+export const SYSTEM_BUILTIN_USER_IDS = new Set(["built-in-bundles"]);
+
 type ResponsibleUserActorWithMemo = AuthorizationActor & {
   __responsibleUserSnapshotMemo?: Map<string, Promise<ResponsibleUserSnapshot>>;
 };
@@ -2290,6 +2292,7 @@ export function authorizationService(db: Db | DbTransaction) {
       input.actor.type !== "agent" ||
       input.action === "inbox:manage" ||
       !responsibleUserId ||
+      SYSTEM_BUILTIN_USER_IDS.has(responsibleUserId) ||
       !agentDecision.allowed
     ) {
       return agentDecision;
