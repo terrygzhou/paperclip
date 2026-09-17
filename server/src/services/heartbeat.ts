@@ -13,6 +13,9 @@ import { aiConnectionBindingSchema } from "@paperclipai/shared";
 import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
 import { CONVERSATION_CONTINUATION_POLICY, claimedAdapterType, runUsedConversationAdapter, hasConversationContinuationPolicy, isConversationAdapter } from "./conversation-continuation.js";
 import { recordExecutionWait } from "./execution-wait.js";
+import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-runtime/native-review-participant.js";
+import { claimQueuedNativeReviewRun } from "./native-runtime/native-review-dispatch.js";
+import { buildNativeReviewRequest } from "./native-runtime/native-review-prompt.js";
 import {
   legacyExecutionNeedsReconciliation,
   terminalizeLegacyExecution,
@@ -17224,6 +17227,7 @@ export function heartbeatService(
         responsibleUserId: null,
       },
     });
+    const nativeReviewContext = readNativeReviewAssignmentContext(context);
     const queuedCommentIds = queuedCommentIdsFromRunContext(context);
     if (
       issueId &&
@@ -17236,7 +17240,7 @@ export function heartbeatService(
         stage: "claim",
       });
     const queuedCommentClaim =
-      issueId && run.wakeupRequestId && queuedCommentIds.length > 0
+      !nativeReviewContext && issueId && run.wakeupRequestId && queuedCommentIds.length > 0
         ? await db
             .transaction(async (tx) => {
               // Match the queue-edit lock order: issue, wake, then run. Once the
@@ -17551,26 +17555,25 @@ export function heartbeatService(
     }
     const claimed = queuedCommentClaim
       ? queuedCommentClaim.run
-      : await withChatControlRecoveryGate(run, "claim", async (tx) =>
-          tx
-            .update(heartbeatRuns)
-            .set({
-              status: "running",
-              runnerProfileJson: sql`(case when jsonb_typeof(${heartbeatRuns.runnerProfileJson}) = 'object' then ${heartbeatRuns.runnerProfileJson} else '{}'::jsonb end) || ${JSON.stringify({ adapterDispatch: { adapterType: agent.adapterType } })}::jsonb`,
-                    ...legacyControllerClaim(run.runtimeMode),
-              responsibleUserId,
-              startedAt: run.startedAt ?? claimedAt,
-              updatedAt: claimedAt,
-            })
-            .where(
-              and(
-                eq(heartbeatRuns.id, run.id),
-                eq(heartbeatRuns.status, "queued"),
-              ),
-            )
-            .returning()
-            .then((rows) => rows[0] ?? null),
-        );
+      : await withChatControlRecoveryGate(run, "claim", async (tx) => {
+          const claimValues = {
+            status: "running",
+            runnerProfileJson: sql`(case when jsonb_typeof(${heartbeatRuns.runnerProfileJson}) = 'object' then ${heartbeatRuns.runnerProfileJson} else '{}'::jsonb end) || ${JSON.stringify({ adapterDispatch: { adapterType: agent.adapterType } })}::jsonb`,
+            ...legacyControllerClaim(run.runtimeMode),
+            responsibleUserId,
+            startedAt: run.startedAt ?? claimedAt,
+            updatedAt: claimedAt,
+          };
+          if (nativeReviewContext) {
+            return claimQueuedNativeReviewRun(tx, {
+              run, claimedAt, claimValues,
+              agentNameKey: normalizeAgentNameKey(agent.name),
+            });
+          }
+          return tx.update(heartbeatRuns).set(claimValues).where(and(
+            eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, "queued"),
+          )).returning().then((rows) => rows[0] ?? null);
+        });
     if (!claimed) return null;
 
     publishLiveEvent({
@@ -17594,7 +17597,9 @@ export function heartbeatService(
     });
     publishRunLifecyclePluginEvent(claimed);
 
-    await setWakeupStatus(claimed.wakeupRequestId, "claimed", { claimedAt });
+    if (!nativeReviewContext) {
+      await setWakeupStatus(claimed.wakeupRequestId, "claimed", { claimedAt });
+    }
 
     // Fix A (lazy locking): stamp executionRunId now that the run is actually running,
     // not at queue time. Guard is idempotent — safe if called more than once.
@@ -17602,7 +17607,7 @@ export function heartbeatService(
     const claimedIssueId = readNonEmptyString(claimedContext.issueId);
     const claimedWakeReason = readNonEmptyString(claimedContext.wakeReason);
     if (
-      claimedIssueId &&
+      !nativeReviewContext && claimedIssueId &&
       claimedWakeReason !== "source_scoped_recovery_action"
     ) {
       const claimedAgent = await getAgent(claimed.agentId);
@@ -20965,8 +20970,9 @@ export function heartbeatService(
       });
       // A live holder is always consulted for shared workspaces. Depending on policy and the final
       // execution target it either remains the existing deferral gate or becomes dispatch context.
-      // Holder staleness and the workspace_busy retry ladder are intentionally unchanged for every
-      // path that serializes.
+      // Local/SSH folders never take an exclusive workspace lock, including when older
+      // project or issue settings request serialization. Sandbox protection still uses
+      // the existing holder staleness and workspace_busy retry ladder.
       if (
         issueRef?.projectWorkspaceId &&
         effectiveExecutionWorkspaceMode === "shared_workspace"
@@ -20982,11 +20988,10 @@ export function heartbeatService(
           const environmentDriver =
             selectedEnvironmentForConfig?.driver ?? null;
           const shouldSerialize =
-            sharedWorkspaceConcurrency === "serialize" ||
-            (sharedWorkspaceConcurrency === "auto" &&
-              (executionForcedToKubernetes ||
-                (environmentDriver !== "local" &&
-                  environmentDriver !== "ssh")));
+            sharedWorkspaceConcurrency !== "allow" &&
+            (executionForcedToKubernetes ||
+              (environmentDriver !== "local" &&
+                environmentDriver !== "ssh"));
           if (shouldSerialize) {
             throw new WorkspaceBusyDeferral({
               holder: workspaceHolder,
@@ -22868,6 +22873,19 @@ export function heartbeatService(
           }
           const nativeExecutionWorkspaceId =
             persistedExecutionWorkspace?.id ?? run.id;
+          const nativeReviewContext = readNativeReviewAssignmentContext(context);
+          const nativeReview = nativeReviewContext ? await getNativeReviewAssignment(db, {
+            companyId: agent.companyId, issueId: issueRef.id, agentId: agent.id,
+            contextSnapshot: nativeReviewContext,
+          }) : null;
+          if (nativeReviewContext && !nativeReview) throw new Error("native_review_assignment_no_longer_available");
+          const nativeReviewRequest = nativeReview
+            ? buildNativeReviewRequest({
+                title: nativeReview.interaction.title,
+                summary: nativeReview.interaction.summary,
+                payload: nativeReview.interaction.payload,
+              })
+            : null;
           const persistedContract = run.completionContractId
             ? await db
                 .select()
@@ -22897,10 +22915,11 @@ export function heartbeatService(
                   issue: issueRef,
                   actorId: agent.id,
                   immediateRequest:
-                    executionContinuation?.objective ??
+                    nativeReviewRequest ?? executionContinuation?.objective ??
                     safeWakeCommentContext?.body ??
                     null,
                   immediateRequests: (() => {
+                    if (nativeReviewRequest) return [nativeReviewRequest];
                     const requests = nativeCompletionRequestsForComments(
                       safeWakeComments.length > 0
                         ? safeWakeComments
@@ -23256,9 +23275,9 @@ export function heartbeatService(
                   buildNativeExecutionInput({
                     companyId: agent.companyId,
                     runId: run.id,
-                    issue: issueRef,
+                    issue: nativeReviewRequest ? { ...issueRef, title: `Review: ${issueRef.title}`, description: nativeReviewRequest } : issueRef,
                     taskPrompt: [
-                      readNonEmptyString(
+                      nativeReviewRequest ?? readNonEmptyString(
                         selectPaperclipTaskMarkdown(context, {
                           resumedSession,
                         }),
@@ -26833,7 +26852,9 @@ export function heartbeatService(
               }).where(eq(agentWakeupRequests.id, executionWaitRequestId));
               return { kind: "deferred" as const };
             }
-            if (durableRequest || wakeCommentId || hasInteractionContinuationWakeContext(enrichedContextSnapshot)) {
+            if (durableRequest || wakeCommentId ||
+                hasInteractionContinuationWakeContext(enrichedContextSnapshot) ||
+                readNonEmptyString(enrichedContextSnapshot.nativeStatusWakeIntentId)) {
               await tx.insert(agentWakeupRequests).values({
                 ...durableReceiptFields,
                 companyId: agent.companyId, agentId, source, triggerDetail, reason,
@@ -28112,12 +28133,15 @@ export function heartbeatService(
         .then((rows) => rows[0] ?? null);
 
       if (existingDispatch) {
+        const recoveredStatus = existingDispatch.runId
+          ? "coalesced"
+          : existingDispatch.status === "deferred_issue_execution"
+            ? "coalesced"
+            : existingDispatch.status;
         await db
           .update(agentWakeupRequests)
           .set({
-            status: existingDispatch.runId
-              ? "coalesced"
-              : existingDispatch.status,
+            status: recoveredStatus,
             runId: existingDispatch.runId,
             finishedAt:
               (existingDispatch.runId ?? existingDispatch.finishedAt)
@@ -28173,7 +28197,7 @@ export function heartbeatService(
         readNonEmptyString(wakeContext.issueId) ??
         null;
       const scopeKey = issueId
-        ? `${candidate.companyId}:${candidate.agentId}:${issueId}`
+        ? `${candidate.companyId}:${candidate.agentId}:${issueId}:${readNativeReviewAssignmentContext(wakeContext)?.nativeReviewInteractionId ?? ""}`
         : null;
       const priorDelivery = scopeKey
         ? deliveredByIssueScope.get(scopeKey)
@@ -28208,10 +28232,17 @@ export function heartbeatService(
           )
           .limit(1)
           .then((rows) => rows[0] ?? null);
+        const nativeReview = candidate.reason === "native_completion_review"
+          ? await getNativeReviewAssignment(db, {
+              companyId: candidate.companyId, issueId, agentId: candidate.agentId,
+              contextSnapshot: wakeContext,
+            })
+          : null;
         if (
           !targetIssue ||
           ["done", "cancelled"].includes(targetIssue.status) ||
-          targetIssue.assigneeAgentId !== candidate.agentId
+          (targetIssue.assigneeAgentId !== candidate.agentId && !nativeReview) ||
+          (candidate.reason === "native_completion_review" && !nativeReview)
         ) {
           await db
             .update(agentWakeupRequests)
@@ -28265,10 +28296,18 @@ export function heartbeatService(
           .limit(1)
           .then((rows) => rows[0] ?? null);
 
+        // The committer intent is the durable outbox entry. When admission is
+        // blocked, enqueueWakeup creates a separate deferred dispatch receipt;
+        // leave the original intent coalesced so the release drain cannot
+        // promote both rows (the original has no nativeStatusWakeIntentId
+        // provenance and would otherwise run once before the dispatch receipt).
+        const deliveredStatus = delivered?.status ?? "queued";
         await db
           .update(agentWakeupRequests)
           .set({
-            status: wakeRun ? "coalesced" : (delivered?.status ?? "queued"),
+            status: wakeRun || deliveredStatus === "deferred_issue_execution"
+              ? "coalesced"
+              : deliveredStatus,
             runId: wakeRun?.id ?? delivered?.runId ?? null,
             finishedAt:
               wakeRun || delivered?.finishedAt
