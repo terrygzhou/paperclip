@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import * as cloudRuntimeIdentity from "../services/cloud-runtime-identity.js";
 import {
   createHash,
   createHmac,
@@ -1765,6 +1766,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         | "githubWebhookReplayBarrier"
         | "githubWebhookResponseBudgetMs"
         | "publicBaseUrl"
+        | "webhookPublicBaseUrl"
         | "scheduleDeferredWork"
         | "setupSecretActivityLogger"
         | "setupSecretCredentialPersistBarrier"
@@ -12754,6 +12756,117 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     });
     await service.shutdown();
   });
+
+  it.each([undefined, "https://ingress.example"])(
+    "uses a live Cloud claim after chat service startup (ingress: %s)",
+    async (webhookPublicBaseUrl) => {
+      const poolOrigin = "https://pool-fixture.staging.paperclip.app";
+      const claimedOrigin = "https://claimed-fixture.staging.paperclip.app";
+      const canonicalOrigin = vi.spyOn(cloudRuntimeIdentity, "runtimeCanonicalOrigin").mockReturnValue(null);
+      let context: ReturnType<typeof createService> | undefined;
+      try {
+        const fixture = await seedCompany();
+        context = createService(new FakeChatSdkRuntime(), fakeSlackFetch(), {
+          publicBaseUrl: poolOrigin,
+          webhookPublicBaseUrl,
+        });
+        const { service } = context;
+        const endpoints = [];
+        for (const provider of ["slack", "github", "microsoft-teams", "telegram"] as const) {
+          endpoints.push(await service.create(fixture.companyId, {
+            provider,
+            assignedAgentId: fixture.assignedAgentId,
+          }, "owner-user"));
+        }
+        expect(endpoints[0].setup.webhookUrl).toBe(
+          `${webhookPublicBaseUrl ?? poolOrigin}/api/chat-webhooks/${endpoints[0].publicId}/slack`,
+        );
+
+        // The warm process is already serving; applying a signed claim changes
+        // the trusted identity provider without constructing another service.
+        canonicalOrigin.mockReturnValue(claimedOrigin);
+        for (const endpoint of endpoints) {
+          const updated = await service.get(endpoint.id);
+          const callback = `${webhookPublicBaseUrl ?? claimedOrigin}/api/chat-webhooks/${endpoint.publicId}/${endpoint.provider}`;
+          expect(updated.setup).toMatchObject(endpoint.provider === "microsoft-teams"
+            ? { messagingEndpoint: callback }
+            : { webhookUrl: callback });
+          const [principal] = await db.insert(chatExternalPrincipals).values({
+            companyId: fixture.companyId,
+            provider: endpoint.provider,
+            providerAccountId: "",
+            externalId: randomUUID(),
+            kind: "user",
+            isBot: false,
+          }).returning();
+          const intent = await service.createLinkIntent(endpoint.id, principal.id, 1800);
+          expect(intent.confirmationUrl).toMatch(
+            /^https:\/\/claimed-fixture\.staging\.paperclip\.app\/chat-identity\/confirm\?token=/,
+          );
+        }
+        const fresh = await service.create(fixture.companyId, {
+          provider: "slack",
+          assignedAgentId: fixture.assignedAgentId,
+        }, "owner-user");
+        expect(fresh.setup.webhookUrl).toBe(
+          `${webhookPublicBaseUrl ?? claimedOrigin}/api/chat-webhooks/${fresh.publicId}/slack`,
+        );
+      } finally {
+        try {
+          await context?.service.shutdown();
+        } finally {
+          canonicalOrigin.mockRestore();
+        }
+      }
+    },
+  );
+
+  it.each([undefined, "https://ingress.example"])(
+    "registers provider callbacks after a live Cloud claim (ingress: %s)",
+    async (webhookPublicBaseUrl) => {
+      const poolOrigin = "https://pool-fixture.staging.paperclip.app";
+      const claimedOrigin = "https://claimed-fixture.staging.paperclip.app";
+      const canonicalOrigin = vi.spyOn(cloudRuntimeIdentity, "runtimeCanonicalOrigin").mockReturnValue(null);
+      let telegram: ReturnType<typeof createService> | undefined;
+      let github: Awaited<ReturnType<typeof configuredGitHubEndpoint>> | undefined;
+      try {
+        const fixture = await seedCompany();
+        const telegramRequests: Array<Record<string, unknown>> = [];
+        const telegramFetch = fakeTelegramFetch();
+        telegram = createService(new FakeChatSdkRuntime(), (async (input, init) => {
+          if (String(input).endsWith("/setWebhook")) {
+            telegramRequests.push(JSON.parse(String(init?.body)));
+          }
+          return telegramFetch(input);
+        }) as typeof globalThis.fetch, { publicBaseUrl: poolOrigin, webhookPublicBaseUrl });
+        const endpoint = await telegram.service.create(fixture.companyId, {
+          provider: "telegram",
+          assignedAgentId: fixture.assignedAgentId,
+        }, "owner-user");
+        github = await configuredGitHubEndpoint(fixture, { publicBaseUrl: poolOrigin, webhookPublicBaseUrl });
+        expect(github.webhookSyncRequests).toHaveLength(0);
+
+        canonicalOrigin.mockReturnValue(claimedOrigin);
+        await telegram.service.configure(endpoint.id, {
+          action: "configure",
+          credentials: { botToken: "123456:telegram-cloud-claim-test" },
+        }, "owner-user");
+        expect(telegramRequests).toEqual([expect.objectContaining({
+          url: `${webhookPublicBaseUrl ?? claimedOrigin}/api/chat-webhooks/${endpoint.publicId}/telegram`,
+        })]);
+        await github.service.configure(github.endpoint.id, { action: "reconnect" }, "owner-user");
+        expect(github.webhookSyncRequests).toEqual([expect.objectContaining({
+          url: `${webhookPublicBaseUrl ?? claimedOrigin}/api/chat-webhooks/${github.endpoint.publicId}/github`,
+        })]);
+      } finally {
+        try {
+          await Promise.all([telegram?.service.shutdown(), github?.service.shutdown()]);
+        } finally {
+          canonicalOrigin.mockRestore();
+        }
+      }
+    },
+  );
 
   it("separates verified webhook ingress from board identity links for every webhook provider", async () => {
     const fixture = await seedCompany();
