@@ -1,6 +1,6 @@
-// Vendored from ClipLab a050f724; see PROVENANCE.md and LICENSE.
+// Vendored from ClipLab 987b6db0 (v0.2.0); see PROVENANCE.md and LICENSE.
 import * as THREE from 'three'
-import { drawFace, drawProp, type CharacterRenderer } from './renderer.js'
+import { compactMouthOffset, drawFace, drawProp, type CharacterRenderer } from './renderer.js'
 import { detailAt } from './model.js'
 import { SvgCanvas, number as n, xml } from './svg-canvas.js'
 import { boundaryContours, pathData, type Point, type ProjectPoint } from './svg-path.js'
@@ -90,7 +90,7 @@ export function snapshotSvg(snapshot: Snapshot, prefix = `cliplab-${crypto.rando
   const surface = (mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>, label: string) => {
     const data = triangles(mesh, true), u = mesh.material.uniforms
     const colorA = u.colorA!.value as THREE.Color, colorB = (u.colorB!.value as THREE.Color).clone().lerp(colorA, 1 - u.gradientOn!.value)
-    const shade = u.toonOn!.value && !u.insetFill!.value ? .8 : 1
+    const shade = u.toonOn!.value && !u.insetFill!.value ? .82 : 1
     const gradient = fitGradient(data.triangles), { x, y, t, gx, gy } = gradient, length = gx * gx + gy * gy
     let fill = shadedColor(colorA, shade)
     if (u.gradientOn!.value > 0 && !colorA.equals(colorB)) {
@@ -114,7 +114,7 @@ export function snapshotSvg(snapshot: Snapshot, prefix = `cliplab-${crypto.rando
   const transparent: { z: number; markup: string }[] = []
   if (face.visible) {
     const art = new SvgCanvas('face', faceProjector(face, project))
-    drawFace(art as unknown as CanvasRenderingContext2D, sample.pose, character, sample.blink, detailAt(options.displaySize ?? Math.min(width, height)), snapshot.gaze, { phase: sample.effectPhase, tearAmount: sample.tearAmount, eyeGazes: snapshot.eyeGazes, faceLayers: sample.faceLayers, simpleEyes: snapshot.simpleEyes })
+    drawFace(art as unknown as CanvasRenderingContext2D, sample.pose, character, sample.blink, detailAt(options.displaySize ?? Math.min(width, height)), snapshot.gaze, { phase: sample.effectPhase, tearAmount: sample.tearAmount, eyeGazes: snapshot.eyeGazes, faceLayers: sample.faceLayers, simpleEyes: snapshot.simpleEyes, mouthOffset: compactMouthOffset(options.displaySize ?? Math.min(width, height), sample.pose.faceScale, camera.top - camera.bottom, options.displaySize ?? Math.min(width, height)), mouthFollowsEyes: (options.displaySize ?? Math.min(width, height)) >= 16 && (options.displaySize ?? Math.min(width, height)) <= 32 })
     const valid = face.geometry.getAttribute('faceValid'), data = triangles(face)
     const visible = data.triangles.filter(t => t.indices.every(i => valid.getX(i) >= .99))
     defs.push(`<clipPath id="face-visible"><path d="${pathData(boundaryContours(visible.map(t => t.points)))}"/></clipPath>`)
@@ -124,7 +124,7 @@ export function snapshotSvg(snapshot: Snapshot, prefix = `cliplab-${crypto.rando
   }
   if (prop.visible && prop.material.opacity > 0) {
     const art = new SvgCanvas('prop'), name = sample.pose.prop
-    drawProp(art as unknown as CanvasRenderingContext2D, name, name === 'heart' ? '#ff768c' : name === 'sweat' ? '#b7e9ff' : '#ffd362', sample.effectPhase)
+    drawProp(art as unknown as CanvasRenderingContext2D, name, name === 'heart' ? '#ff768c' : name === 'sweat' ? '#b7e9ff' : '#ffd362', sample.effectPhase, sample.pose)
     const center = project(prop.getWorldPosition(new THREE.Vector3())), scale = prop.getWorldScale(new THREE.Vector3())
     const w = scale.x * width / (camera.right - camera.left), h = scale.y * height / (camera.top - camera.bottom)
     const foreground = !prop.material.depthTest

@@ -16,9 +16,11 @@ describe("agent appearance", () => {
   });
   it("renders without a browser and preserves logical-size detail at high density", () => {
     const appearance = appearanceForPalette("bubblegum-sky");
+    // ClipLab v0.2.0 draws an enlarged compact face from 16px; only 12px and
+    // below (not a logical size) is body-only.
     const small = renderAgentSvg(appearance, 16, 2);
     expect(small).toContain('width="32"');
-    expect(small).not.toContain('id="agent-face-visible"');
+    expect(small).toContain('id="agent-face-visible"');
     const eyes = renderAgentSvg(appearance, 24, 2);
     expect(eyes).toContain('width="48"');
     expect(eyes).toContain('id="agent-face-visible"');

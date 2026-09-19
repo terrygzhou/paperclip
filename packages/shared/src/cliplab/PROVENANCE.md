@@ -1,7 +1,8 @@
 # ClipLab cap-v1
 
 Source: https://github.com/tonio-alucema/cliplab
-Commit: a050f7246738db1d0763e286862747633293e2af
+Release: v0.2.0 (runtime package 0.2.0)
+Commit: 987b6db049471df815ebcb88bcd7abb46ed0c34b
 License: MIT (see LICENSE). Three.js is MIT licensed.
 
 Paperclip adaptations: ESM extensions, optional graphics backend for Node SVG

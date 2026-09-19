@@ -1,4 +1,4 @@
-// Vendored from ClipLab a050f724; see PROVENANCE.md and LICENSE.
+// Vendored from ClipLab 987b6db0 (v0.2.0); see PROVENANCE.md and LICENSE.
 export type Shape = 'capsule' | 'cap' | 'sphere'
 export type Eye = 'dot' | 'soft' | 'closed' | 'wink' | 'star' | 'heart' | 'squint' | 'wide' | 'arc-up' | 'arc-down' | 'half-lidded' | 'pupil'
 export type Mouth = 'smile' | 'open' | 'line' | 'frown' | 'oh' | 'wave' | 'sleep' | 'grin' | 'cry' | 'u-smile' | 'kiss' | 'tongue-out'
@@ -6,8 +6,8 @@ export type Prop = 'none' | 'zzz' | 'sparkle' | 'heart' | 'question' | 'sweat' |
 export type Detail = 'body' | 'eyes' | 'full'
 
 export interface Pose {
-  eye: Eye; mouth: Mouth; prop: Prop
-  faceSet: 'set-1' | 'set-2'; brows: 'none' | 'raised' | 'worried' | 'angry'; blush: number
+  eye: Eye; mouth: Mouth; prop: Prop; propSize: number; propCount: number; propOutward: number
+  faceSet: 'set-1' | 'set-2'; brows: 'none' | 'raised' | 'worried' | 'angry'; browStroke: number; browLength: number; blush: number
   eyeSize: number; eyeHeight: number; spacing: number; eyeTilt: number
   leftScale: number; rightScale: number; gazeX: number; gazeY: number
   leftX: number; rightX: number; leftY: number; rightY: number; leftRotation: number; rightRotation: number
@@ -15,7 +15,8 @@ export interface Pose {
   rotationX: number; rotationY: number; rotationZ: number; squash: number
   tongue: boolean; teeth: boolean; drool: boolean; cheeks: boolean; tears: boolean; mouthStroke: number
 }
-export interface Beat { id: string; name: string; duration: number; pose: Pose; gradientAction?: 'rotate' | 'hold' }
+export interface Beat { id: string; name: string; duration: number; pose: Pose; gradientAction?: 'rotate' | 'hold'; gradientTurns?: number }
+export interface FavoriteBeat { id: string; sourceBeatId: string; beat: Beat }
 export interface Expression { id: string; name: string; description: string; beats: Beat[]; poseExpressionId?: string }
 export interface Step { id: string; expressionId: string; duration: number }
 export interface Animation { id: string; name: string; steps: Step[]; loop: boolean }
@@ -26,7 +27,19 @@ export interface Character {
   motion: number; speed: number; blink: boolean; blinkInterval: number; followCursor: boolean; followRotation: boolean
 }
 export interface Definition { version: 1; character: Character; expressions: Expression[]; animations: Animation[] }
-export interface Project { version: 1; name: string; characters: Character[]; expressions: Expression[]; animations: Animation[]; defaultsRevision?: number }
+export interface Project { version: 1; name: string; characters: Character[]; expressions: Expression[]; animations: Animation[]; defaultsRevision?: number; favoriteBeats?: FavoriteBeat[] }
+/** Remove references too, keeping every animation playable and the project importable. */
+export function removeExpression(project: Project, id: string) {
+  if (project.expressions.length <= 1 || !project.expressions.some(e => e.id === id)) return false
+  project.expressions = project.expressions.filter(e => e.id !== id)
+  const fallback = project.expressions[0]!
+  for (const expression of project.expressions) if (expression.poseExpressionId === id) delete expression.poseExpressionId
+  for (const animation of project.animations) {
+    animation.steps = animation.steps.filter(step => step.expressionId !== id)
+    if (!animation.steps.length) animation.steps.push({ id: uid('step'), expressionId: fallback.id, duration: expressionDuration(fallback) })
+  }
+  return true
+}
 export type FaceTraits = Pick<Pose, 'eye' | 'mouth' | 'faceSet' | 'brows' | 'cheeks' | 'tongue' | 'teeth' | 'drool'>
 export interface FaceLayer { traits: FaceTraits; weight: number }
 export interface Sample { pose: Pose; blink: number; bob: number; breathe: number; expressionId: string; beatIndex: number; stepIndex: number; effectPhase?: number; propAmount?: number; tearAmount?: number; gradientRotation?: number; gradientMix?: number; faceLayers?: FaceLayer[] }
@@ -42,11 +55,11 @@ export const PALETTES = [
   ['#f0ce58', '#fff1a5'], ['#ee98b2', '#ffd2da'], ['#72b6de', '#b9e4f5']
 ]
 
-export function detailAt(size: number): Detail { return size <= 16 ? 'body' : size <= 24 ? 'eyes' : 'full' }
+export function detailAt(size: number): Detail { return size <= 12 ? 'body' : 'full' }
 export function uid(prefix = 'item') { return `${prefix}-${crypto.randomUUID().slice(0, 8)}` }
 export function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T }
 export const BASE_POSE: Pose = {
-  eye: 'dot', mouth: 'smile', prop: 'none', faceSet: 'set-1', brows: 'none', blush: 0, eyeSize: 1, eyeHeight: 1, spacing: 1, eyeTilt: 0,
+  eye: 'dot', mouth: 'smile', prop: 'none', propSize: 1, propCount: 0, propOutward: 1, faceSet: 'set-1', brows: 'none', browStroke: 1, browLength: 1, blush: 0, eyeSize: 1, eyeHeight: 1, spacing: 1, eyeTilt: 0,
   leftScale: 1, rightScale: 1, gazeX: 0, gazeY: 0, mouthWidth: 1, mouthOpen: .5,
   leftX: 0, rightX: 0, leftY: 0, rightY: 0, leftRotation: 0, rightRotation: 0,
   faceScale: .75, faceY: 0, rotationX: 0, rotationY: 0, rotationZ: 0, squash: 1,
@@ -96,7 +109,7 @@ export function defaultExpressions(): Expression[] {
 export function defaultProject(): Project {
   const base: Character = {
     id: 'milo', name: 'Milo', shape: 'capsule', color: '#ff986d', color2: '#ffd092', gradient: true,
-    gradientAngle: 20, toon: true, trueFront: false, lockPosition: false, eyeColor: '#080909', iris: false, elevated: false, elevation: .065,
+    gradientAngle: -24, toon: true, trueFront: false, lockPosition: false, eyeColor: '#080909', iris: false, elevated: false, elevation: .065,
     shadow: true, motion: .45, speed: 1, blink: true, blinkInterval: 4.2, followCursor: false, followRotation: false
   }
   const expressions = defaultExpressions()
@@ -178,6 +191,7 @@ export function mixPose(a: Pose, b: Pose, t: number): Pose {
 const smooth = (t: number) => { const v = Math.max(0, Math.min(1, t)); return v * v * (3 - 2 * v) }
 function featureAmount(a: unknown, b: unknown, blend: number) { return a === b ? 1 : blend < .5 ? 1 - smooth(blend * 2) : smooth((blend - .5) * 2) }
 const mod = (t: number, d: number) => ((t % d) + d) % d
+export const gradientTurns = (beat: Beat) => Number.isFinite(beat.gradientTurns) ? Math.max(1, Math.min(8, Math.round(beat.gradientTurns!))) : 1
 export function sampleExpression(expression: Expression, time: number, expressions: Expression[] = [], visited = new Set<string>()): { pose: Pose; beatIndex: number; propAmount: number; tearAmount: number; gradientRotation?: number; gradientMix?: number; faceLayers: FaceLayer[] } {
   const duration = expressionDuration(expression)
   let t = mod(time, duration)
@@ -195,9 +209,9 @@ export function sampleExpression(expression: Expression, time: number, expressio
       const turnEased = (1 - Math.cos(Math.PI * turn)) / 2
       const source = expressions.find(e => e.id === expression.poseExpressionId && !visited.has(e.id) && e.id !== expression.id)
       const face = source ? sampleExpression(source, mod(time, duration) / duration * expressionDuration(source), expressions, new Set([...visited, expression.id])) : undefined
-      return { pose: face?.pose ?? mixPose(previous.pose, beat.pose, eased), faceLayers: face?.faceLayers ?? mixFaceLayers(faceLayers(previous.pose), faceLayers(beat.pose), eased), beatIndex: i, propAmount: face?.propAmount ?? featureAmount(previous.pose.prop, beat.pose.prop, eased), tearAmount: face?.tearAmount ?? featureAmount(previous.pose.tears, beat.pose.tears, eased), ...(gradient ? { gradientRotation: gradientStart + (beat.gradientAction === 'rotate' ? 360 * turnEased : 0), gradientMix: 1 } : {}) }
+      return { pose: face?.pose ?? mixPose(previous.pose, beat.pose, eased), faceLayers: face?.faceLayers ?? mixFaceLayers(faceLayers(previous.pose), faceLayers(beat.pose), eased), beatIndex: i, propAmount: face?.propAmount ?? featureAmount(previous.pose.prop, beat.pose.prop, eased), tearAmount: face?.tearAmount ?? featureAmount(previous.pose.tears, beat.pose.tears, eased), ...(gradient ? { gradientRotation: gradientStart + (beat.gradientAction === 'rotate' ? 360 * gradientTurns(beat) * turnEased : 0), gradientMix: 1 } : {}) }
     }
-    if (beat.gradientAction === 'rotate') gradientStart += 360
+    if (beat.gradientAction === 'rotate') gradientStart += 360 * gradientTurns(beat)
     t -= beatDuration
   }
   return { pose: p(), faceLayers: faceLayers(p()), beatIndex: 0, propAmount: 1, tearAmount: 1 }
@@ -266,13 +280,17 @@ function choice<T extends string>(v: unknown, options: T[], fallback: T) { retur
 function boolean(v: unknown, fallback: boolean) { return typeof v === 'boolean' ? v : fallback }
 function parsePose(value: unknown): Pose {
   const v = obj(value), pose = { ...BASE_POSE }
-  const ranges: Record<string, [number, number]> = { blush: [0, 1], mouthStroke: [.5, 2.2], leftX: [-60, 60], rightX: [-60, 60], leftY: [-60, 60], rightY: [-60, 60], leftRotation: [-90, 90], rightRotation: [-90, 90], eyeSize: [.35, 2], eyeHeight: [.15, 2], spacing: [.5, 1.6], eyeTilt: [-45, 45], leftScale: [.3, 1.8], rightScale: [.3, 1.8], gazeX: [-1, 1], gazeY: [-1, 1], mouthWidth: [.3, 1.7], mouthOpen: [.1, 1], faceScale: [.6, 1.4], faceY: [-.3, .3], rotationX: [-180, 180], rotationY: [-180, 180], rotationZ: [-180, 180], squash: [.8, 1.2] }
+  const ranges: Record<string, [number, number]> = { propSize: [.5, 2], propCount: [0, 6], propOutward: [0, 3], browStroke: [.3, 2.5], browLength: [.5, 2], blush: [0, 1], mouthStroke: [.5, 2.2], leftX: [-60, 60], rightX: [-60, 60], leftY: [-60, 60], rightY: [-60, 60], leftRotation: [-90, 90], rightRotation: [-90, 90], eyeSize: [.35, 2], eyeHeight: [.15, 2], spacing: [.5, 1.6], eyeTilt: [-45, 45], leftScale: [.3, 1.8], rightScale: [.3, 1.8], gazeX: [-1, 1], gazeY: [-1, 1], mouthWidth: [.3, 1.7], mouthOpen: [.1, 1], faceScale: [.6, 1.4], faceY: [-.3, .3], rotationX: [-180, 180], rotationY: [-180, 180], rotationZ: [-180, 180], squash: [.8, 1.2] }
   for (const key of numericKeys) { const [lo, hi] = ranges[key]!; (pose as unknown as Record<string, unknown>)[key] = num(v[key], BASE_POSE[key] as number, lo, hi) }
   return { ...pose, faceSet: choice(v.faceSet, ['set-1', 'set-2'], 'set-1'), brows: choice(v.brows, ['none', 'raised', 'worried', 'angry'], 'none'), eye: choice(v.eye, EYES, 'dot'), mouth: choice(v.mouth, MOUTHS, 'smile'), prop: choice(v.prop, PROPS, 'none'), tongue: boolean(v.tongue, false), teeth: boolean(v.teeth, false), drool: boolean(v.drool, false), cheeks: boolean(v.cheeks, false), tears: boolean(v.tears, false) }
 }
 export function parseCharacter(value: unknown): Character {
   const v = obj(value), d = defaultProject().characters[0]!
-  return { ...d, id: str(v.id, uid('character')), name: str(v.name, 'Character'), shape: choice(v.shape, ['capsule', 'cap', 'sphere'], 'capsule'), color: color(v.color, d.color), color2: color(v.color2, d.color2), gradient: boolean(v.gradient, true), gradientAngle: num(v.gradientAngle, 20, -180, 180), toon: boolean(v.toon, d.toon), trueFront: boolean(v.trueFront, false), lockPosition: boolean(v.lockPosition, false), eyeColor: color(v.eyeColor, d.eyeColor), iris: boolean(v.iris, false), elevated: boolean(v.elevated, false), elevation: num(v.elevation, .065, .005, .2), shadow: boolean(v.shadow, true), motion: num(v.motion, .45, 0, 1), speed: num(v.speed, 1, .25, 3), blink: boolean(v.blink, true), blinkInterval: num(v.blinkInterval, 4.2, 1, 12), followCursor: boolean(v.followCursor, false), followRotation: boolean(v.followRotation, false) }
+  return { ...d, id: str(v.id, uid('character')), name: str(v.name, 'Character'), shape: choice(v.shape, ['capsule', 'cap', 'sphere'], 'capsule'), color: color(v.color, d.color), color2: color(v.color2, d.color2), gradient: boolean(v.gradient, true), gradientAngle: num(v.gradientAngle, -24, -180, 180), toon: boolean(v.toon, d.toon), trueFront: boolean(v.trueFront, false), lockPosition: boolean(v.lockPosition, false), eyeColor: color(v.eyeColor, d.eyeColor), iris: boolean(v.iris, false), elevated: boolean(v.elevated, false), elevation: num(v.elevation, .065, .005, .2), shadow: boolean(v.shadow, true), motion: num(v.motion, .45, 0, 1), speed: num(v.speed, 1, .25, 3), blink: boolean(v.blink, true), blinkInterval: num(v.blinkInterval, 4.2, 1, 12), followCursor: boolean(v.followCursor, false), followRotation: boolean(v.followRotation, false) }
+}
+function parseBeat(item: unknown, index: number): Beat {
+  const b = obj(item)
+  return { id: str(b.id, `beat-${index}`), name: str(b.name, `Beat ${index + 1}`), duration: num(b.duration, 1.5, .2, 15), pose: parsePose(b.pose), ...(b.gradientAction === 'rotate' || b.gradientAction === 'hold' ? { gradientAction: b.gradientAction, ...(b.gradientTurns !== undefined ? { gradientTurns: Math.round(num(b.gradientTurns, 1, 1, 8)) } : {}) } : {}) }
 }
 export function parseProject(value: unknown): Project {
   const v = obj(value)
@@ -282,7 +300,7 @@ export function parseProject(value: unknown): Project {
   const expressions = v.expressions.map((item, index): Expression => {
     const e = obj(item)
     if (!Array.isArray(e.beats) || !e.beats.length || e.beats.length > 32) throw new Error('Each expression needs 1–32 beats.')
-    return { id: str(e.id, `expression-${index}`), name: str(e.name, 'Expression'), description: str(e.description, '', 160), ...(typeof e.poseExpressionId === 'string' && e.poseExpressionId ? { poseExpressionId: e.poseExpressionId } : {}), beats: e.beats.map((item, i) => { const b = obj(item); return { id: str(b.id, `beat-${i}`), name: str(b.name, `Beat ${i + 1}`), duration: num(b.duration, 1.5, .2, 15), pose: parsePose(b.pose), ...(b.gradientAction === 'rotate' || b.gradientAction === 'hold' ? { gradientAction: b.gradientAction } : {}) } }) }
+    return { id: str(e.id, `expression-${index}`), name: str(e.name, 'Expression'), description: str(e.description, '', 160), ...(typeof e.poseExpressionId === 'string' && e.poseExpressionId ? { poseExpressionId: e.poseExpressionId } : {}), beats: e.beats.map(parseBeat) }
   })
   if (new Set(expressions.map(e => e.id)).size !== expressions.length) throw new Error('Expression names in the file must have unique IDs.')
   for (const expression of expressions) {
@@ -302,7 +320,7 @@ export function parseProject(value: unknown): Project {
   })
   const characters = charactersRaw.map(parseCharacter)
   if (new Set(characters.map(c => c.id)).size !== characters.length || new Set(animations.map(a => a.id)).size !== animations.length) throw new Error('Characters and animations need unique IDs.')
-  return { version: 1, name: str(v.name, 'My character studio'), characters, expressions, animations, ...(typeof v.defaultsRevision === 'number' ? { defaultsRevision: num(v.defaultsRevision, 2, 0, 1000) } : {}) }
+  return { version: 1, name: str(v.name, 'My character studio'), characters, expressions, animations, ...(Array.isArray(v.favoriteBeats) ? { favoriteBeats: v.favoriteBeats.slice(0, 200).map((item, i) => { const f = obj(item); return { id: str(f.id, `favorite-${i}`), sourceBeatId: str(f.sourceBeatId, ''), beat: parseBeat(f.beat, i) } }) } : {}), ...(typeof v.defaultsRevision === 'number' ? { defaultsRevision: num(v.defaultsRevision, 2, 0, 1000) } : {}) }
 }
 
 /** Upgrade only untouched studio defaults, once; portable definitions stay literal. */

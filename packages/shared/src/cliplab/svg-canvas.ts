@@ -1,4 +1,4 @@
-// Vendored from ClipLab a050f724; see PROVENANCE.md and LICENSE.
+// Vendored from ClipLab 987b6db0 (v0.2.0); see PROVENANCE.md and LICENSE.
 import { flatten, pathData, strokeOutline, type ProjectPoint } from './svg-path.js'
 // A small vector recorder for the Canvas 2D operations used by ClipLab's faces.
 // Paths stay editable; no bitmap or external asset is embedded in the SVG.

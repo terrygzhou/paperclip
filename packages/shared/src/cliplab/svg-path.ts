@@ -1,4 +1,4 @@
-// Vendored from ClipLab a050f724; see PROVENANCE.md and LICENSE.
+// Vendored from ClipLab 987b6db0 (v0.2.0); see PROVENANCE.md and LICENSE.
 /** Compact projected vector paths. Curves are flattened below a display pixel,
  * then simplified after projection; strokes become filled outlines before warping. */
 export type Point = { x: number; y: number }

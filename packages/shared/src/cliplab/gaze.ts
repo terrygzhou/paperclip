@@ -1,4 +1,4 @@
-// Vendored from ClipLab a050f724; see PROVENANCE.md and LICENSE.
+// Vendored from ClipLab 987b6db0 (v0.2.0); see PROVENANCE.md and LICENSE.
 export interface Gaze { x: number; y: number }
 export interface PointerLook extends Gaze { weight: number }
 export interface EyeGazes { left: Gaze; right: Gaze }

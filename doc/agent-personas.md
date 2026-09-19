@@ -3,7 +3,13 @@
 Agents have a persisted visual identity independent of prompts and runtime
 configuration: `{ schemaVersion: 1, characterVersion: "cap-v1", paletteId }`.
 The cap-v1 library contains 17 permanent palettes and a presentation-only gray
-Muted dream palette. New agents get one random assignment; existing rows are
+Muted dream palette. The character itself is one ClipLab studio export —
+`ui/src/assets/cliplab/onboarding.character.json` (end cap, custom idle,
+sleepy-to-wake) — mirrored into the shared package as
+`packages/shared/src/cliplab/character.ts` by
+`node scripts/sync-cliplab-character.mjs` (`--check` detects drift); every
+palette recolours its body. The onboarding hero and every avatar are the same
+character on the same engine (ClipLab v0.2.0, see PROVENANCE.md). New agents get one random assignment; existing rows are
 backfilled with the same ID-based mapping used by legacy clients. Duplicating
 an agent generates another assignment. Export/import preserves it.
 
@@ -80,11 +86,17 @@ hashes and pixel dimensions; deployment verification fetches every image and che
 its content type, PNG signature, dimensions, and hash. Dev Storybook still uses the
 API proxy for cold-cache and regeneration testing.
 
+The onboarding motion values live in `ui/src/motion-tokens.css`, imported by
+`ui/src/index.css`. The JavaScript choreography reads these CSS tokens and uses
+the same stylesheet for defaults before styles load. Reduced motion removes
+transition durations; the connection status hold remains readable.
+
 Focused checks:
 
 ```sh
 pnpm exec vitest run packages/shared/src/agent-appearance.test.ts server/src/__tests__/agent-avatars.test.ts
 node scripts/sync-agent-palette-tokens.mjs --check
+node scripts/sync-cliplab-character.mjs --check
 pnpm check:token-gates
 pnpm build-storybook
 ```

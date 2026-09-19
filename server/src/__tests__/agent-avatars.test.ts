@@ -26,7 +26,7 @@ async function storage() {
   return createLocalDiskStorageProvider(dir);
 }
 async function serve(service: ReturnType<typeof createAgentAvatarService>) {
-  const app = express(); app.use("/api", agentAvatarRoutes(service));
+  const app = express(); app.use("/api", agentAvatarRoutes(service).router);
   const server = await new Promise<Server>(resolve => { const running = app.listen(0, "127.0.0.1", () => resolve(running)); });
   cleanups.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
   return `http://127.0.0.1:${(server.address() as { port: number }).port}/api/agent-avatars/cap-v1/arctic-blue/rest.png`;

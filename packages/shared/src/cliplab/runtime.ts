@@ -51,19 +51,23 @@ export function createCharacter(target: HTMLElement, definition: Definition, opt
     if (destroyed) return
     try { render() } catch { playing = false; sync(); options.onError?.() }
   }
-  const resize = new ResizeObserver(() => {
-    try { renderer.resize(target.clientWidth || 256, target.clientHeight || 256, options.displaySize); if (visible) renderSafely() }
-    catch { playing = false; sync(); options.onError?.() }
-  })
-  const intersection = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; sync() })
+  // Both observers are constructed inside the guarded block below: the renderer
+  // and its canvas already exist by then, so a missing observer must release
+  // them through destroy() rather than leak a WebGL context behind a fallback.
+  let resize: ResizeObserver | null = null, intersection: IntersectionObserver | null = null
   const contextLost = (event: Event) => { event.preventDefault(); playing = false; sync(); options.onError?.() }
   function destroy() {
     if (destroyed) return
-    destroyed = true; sync(); resize.disconnect(); intersection.disconnect()
+    destroyed = true; sync(); resize?.disconnect(); intersection?.disconnect()
     document.removeEventListener('visibilitychange', sync); reduced.removeEventListener('change', sync); coarse.removeEventListener('change', sync)
     canvas.removeEventListener('webglcontextlost', contextLost); renderer.dispose(); canvas.remove()
   }
   try {
+    resize = new ResizeObserver(() => {
+      try { renderer.resize(target.clientWidth || 256, target.clientHeight || 256, options.displaySize); if (visible) renderSafely() }
+      catch { playing = false; sync(); options.onError?.() }
+    })
+    intersection = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; sync() })
     resize.observe(target); intersection.observe(target)
     document.addEventListener('visibilitychange', sync); reduced.addEventListener('change', sync); coarse.addEventListener('change', sync)
     canvas.addEventListener('webglcontextlost', contextLost)

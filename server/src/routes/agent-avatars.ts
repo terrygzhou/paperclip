@@ -15,8 +15,15 @@ const requestSchema = z.object({
   scale: z.enum(["1", "2"]).default("1"),
 }).strict();
 
-/** Public preset artwork only. No agent lookup or tenant data is exposed. */
-export function agentAvatarRoutes(injected?: ReturnType<typeof createAgentAvatarService>) {
+/**
+ * Public preset artwork only. No agent lookup or tenant data is exposed.
+ *
+ * The service (and its worker pool) is created on the first request, so an
+ * instance that never serves an avatar never starts a worker; `close` lets
+ * the application's orderly shutdown end the pool instead of leaving renders
+ * running past HTTP teardown.
+ */
+export function agentAvatarRoutes(injected?: ReturnType<typeof createAgentAvatarService>): { router: ReturnType<typeof Router>; close(): Promise<void> } {
   const router = Router();
   let service = injected;
   router.get("/agent-avatars/:version/:palette/:file", async (req, res) => {
@@ -54,5 +61,5 @@ export function agentAvatarRoutes(injected?: ReturnType<typeof createAgentAvatar
       res.status(error instanceof AvatarAdmissionError ? 429 : 503).json({ error: "Avatar temporarily unavailable" });
     }
   });
-  return router;
+  return { router, close: async () => { await service?.close(); } };
 }
