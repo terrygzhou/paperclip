@@ -1087,6 +1087,20 @@ that classification finishes.
 - A verified live runner re-registers its existing PRP authority and reconnects
   with the same operating-system PID. Paperclip does not spawn a competing
   runner.
+- For a running sandbox session, recovery checks the original provider lease,
+  remote workspace, durable runner identity, and process marker inside that
+  sandbox. The process marker must include the Linux boot ID and start ticks;
+  recovery compares them with the live process before adoption and signaling.
+  Collection uses the required Node runtime and is optional for fresh launches. Older
+  markers or images without that proof remain blocked for recovery. Remote
+  PIDs are never interpreted as controller-local PIDs. The runner must
+  authenticate to its existing PRP authority; reconnection neither
+  launches another provider nor consumes a provider retry. A replacement
+  sandbox or mismatched identity blocks adoption without overwriting evidence.
+- Shutdown waits up to 30 seconds for an in-progress native startup to reach
+  its detach acknowledgement. It reports a startup deadline failure instead
+  of claiming that an unfinished bootstrap detached safely. A queued turn
+  waits for the previous executor to finish releasing its task resources.
 - A verified dead runner starts a replacement from the same durable root and
   resumes the same provider checkpoint. Only the operating-system PID changes.
 - A runner that died before its first authenticated connection can restart on
