@@ -40,6 +40,7 @@ import {
   NativeSessionCleanupQuarantinedError,
   NativeProviderTerminalFailure,
   NativeSessionProtocolIntegrityError,
+  defaultCapabilityRunnerdBinary,
 } from "../../vendor/paperclip-runner/index.js";
 import * as issueServiceModule from "../issues.js";
 import {
@@ -167,18 +168,22 @@ const state = vi.hoisted(() => ({
   release: null as null | (() => void),
 }));
 
-vi.mock("../../vendor/paperclip-runner/index.js", async (importOriginal) => ({
-  ...(await importOriginal<
+vi.mock("../../vendor/paperclip-runner/index.js", async (importOriginal) => {
+  const original = await importOriginal<
     typeof import("../../vendor/paperclip-runner/index.js")
-  >()),
-  createNativeSessionBackend: state.createBackend,
-  createRunnerdCodexTransport: state.createTransport,
-  executeNativeSession: state.execute,
-  settleRetainedRunnerdSession: state.cleanup,
-  retainedRunnerdMaintenanceIsIdle: state.maintenanceIdle,
-  completeRetainedNativeSessionCleanup: state.retireCleanup,
-  parsePaperclipQuestionSet: (value: unknown) => value,
-}));
+  >();
+  return {
+    ...original,
+    defaultCapabilityRunnerdBinary: vi.fn(original.defaultCapabilityRunnerdBinary),
+    createNativeSessionBackend: state.createBackend,
+    createRunnerdCodexTransport: state.createTransport,
+    executeNativeSession: state.execute,
+    settleRetainedRunnerdSession: state.cleanup,
+    retainedRunnerdMaintenanceIsIdle: state.maintenanceIdle,
+    completeRetainedNativeSessionCleanup: state.retireCleanup,
+    parsePaperclipQuestionSet: (value: unknown) => value,
+  };
+});
 
 vi.mock("@paperclipai/adapter-codex-local/server", async (importOriginal) => ({
   ...(await importOriginal<
@@ -1802,6 +1807,7 @@ describe("remote runner build metadata", () => {
     binaryName: "paperclip-runnerd",
     packageName: "@paperclipai/paperclip-runner",
     binaryContractVersion: 2,
+    durableSessionCapabilities: ["unlimited_runtime", "connection_lease_renewal"],
     prpTransportModes: ["dial_ws_loopback", "dial_wss", "listen_ws"],
   };
 
@@ -1822,6 +1828,14 @@ describe("remote runner build metadata", () => {
       ),
     ).toThrow("runner_remote_artifact_contract_incompatible");
   });
+
+  it.each([undefined, [], ["unlimited_runtime"], ["connection_lease_renewal"]])(
+    "rejects a contract-v2 image without current durable session capabilities: %j",
+    (durableSessionCapabilities) => {
+      expect(() => assertRemoteRunnerBuildMetadata({ ...current, durableSessionCapabilities }, "listen_ws"))
+        .toThrow("runner_remote_session_capability_missing:");
+    },
+  );
 
   it("requires the selected transport without falling through", () => {
     expect(() =>
@@ -9569,6 +9583,7 @@ describe("runnerd provider runtime wiring", () => {
         exitCode: 0, timedOut: false, stdout: JSON.stringify({
           schema: "paperclip-runner/runnerd-build-metadata/v1", binaryName: "paperclip-runnerd",
           packageName: "@paperclipai/paperclip-runner", binaryContractVersion: 2,
+          durableSessionCapabilities: ["unlimited_runtime", "connection_lease_renewal"],
           prpTransportModes: ["listen_ws"],
         }), stderr: "",
       };
@@ -9620,7 +9635,14 @@ describe("runnerd provider runtime wiring", () => {
     }
   });
 
-  it("uses the image's shared Codex without uploading or installing artifacts", async () => {
+  it.each([false, true])("uses shared Codex and replaces only a stale runner image (stale=%s)", async (staleRunner) => {
+    // The mocked remote executes metadata probes; artifact staging only needs bytes.
+    // Keep this regression independent of a locally compiled Rust runner binary.
+    const controllerArtifact = join(isolatedStateDirectory, "paperclip-runnerd");
+    if (staleRunner) {
+      await writeFile(controllerArtifact, "fixture runner artifact");
+      vi.mocked(defaultCapabilityRunnerdBinary).mockReturnValueOnce(controllerArtifact);
+    }
     const syncIn = vi.fn(async () => undefined);
     const remoteExecute = vi.fn(
       async (command: { command: string; args?: string[] }) => {
@@ -9632,6 +9654,9 @@ describe("runnerd provider runtime wiring", () => {
             binaryName: "paperclip-runnerd",
             packageName: "@paperclipai/paperclip-runner",
             binaryContractVersion: 2,
+            durableSessionCapabilities: staleRunner && command.command === "/usr/local/bin/paperclip-runnerd"
+              ? undefined
+              : ["unlimited_runtime", "connection_lease_renewal"],
             prpTransportModes: ["listen_ws"],
           });
         } else if (command.args?.[0] === "--version") {
@@ -9643,6 +9668,8 @@ describe("runnerd provider runtime wiring", () => {
             throw new Error("reached-preinstalled-codex-verification");
           }
           stdout = "codex-cli 0.153.4";
+        } else if (script === "uname -s; uname -m") {
+          stdout = `${process.platform === "darwin" ? "Darwin" : "Linux"}\n${process.arch === "arm64" ? "arm64" : "x86_64"}\n`;
         } else if (script.includes("command -v paperclip-runnerd")) {
           stdout = "/usr/local/bin/paperclip-runnerd\n";
         } else if (script.includes("command -v codex")) {
@@ -9689,7 +9716,17 @@ describe("runnerd provider runtime wiring", () => {
     await expect(transport.controlPlaneRegistration({})).rejects.toThrow(
       "reached-preinstalled-codex-verification",
     );
-    expect(syncIn).not.toHaveBeenCalled();
+    if (staleRunner) {
+      expect(syncIn).toHaveBeenCalledTimes(1);
+      expect(syncIn).toHaveBeenCalledWith([expect.objectContaining({
+        files: [expect.objectContaining({
+          sourcePath: controllerArtifact,
+          targetPath: "/workspace/.paperclip-runtime/paperclip-runner/bin/paperclip-runnerd",
+        })],
+      })]);
+    } else {
+      expect(syncIn).not.toHaveBeenCalled();
+    }
     expect(remoteExecute).toHaveBeenCalledWith(
       expect.objectContaining({
         command: "/opt/paperclip-runner/bin/codex",
