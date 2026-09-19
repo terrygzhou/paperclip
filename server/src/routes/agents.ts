@@ -5753,6 +5753,7 @@ export function agentRoutes(
     }
 
     let wakePayload = req.body.payload ?? null;
+    let retryConversationContext: Record<string, unknown> = {};
     if (req.body.failedRunId) {
       assertBoard(req);
       if (
@@ -5798,6 +5799,30 @@ export function agentRoutes(
         });
         if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
         if (issue.assigneeAgentId !== agent.id) throw conflict("The task is no longer assigned to this agent.");
+        if (issue.conversationAgentId) {
+          // Agent Chat has no task description to replay. Recover the exact
+          // request from the selected server-owned run, never caller markers.
+          // Keep the generation pinned so a reset before dispatch cannot revive
+          // the old request. Runs that failed before turn preparation belong to
+          // the initial generation and cannot be retried after a reset.
+          const generation = failedContext.conversationSessionGeneration ?? 0;
+          if (!Number.isInteger(generation) || generation !== issue.conversationSessionGeneration) {
+            throw conflict("Conversation session changed; this older turn cannot be retried.");
+          }
+          retryConversationContext = { conversationSessionGeneration: generation };
+          const commentIds = [...new Set([
+            ...(Array.isArray(failedContext.wakeCommentIds) ? failedContext.wakeCommentIds : []),
+            failedContext.wakeCommentId,
+            failedContext.commentId,
+          ].filter((value): value is string => typeof value === "string" && value.trim().length > 0))];
+          if (commentIds.length > 0) {
+            retryConversationContext = {
+              ...retryConversationContext,
+              wakeCommentIds: commentIds,
+              wakeCommentId: commentIds[commentIds.length - 1],
+            };
+          }
+        }
       }
       const chatBinding = issueId
         ? await db
@@ -5876,6 +5901,7 @@ export function agentRoutes(
       requestedByActorType: req.actor.type === "agent" ? "agent" : "user",
       requestedByActorId: req.actor.type === "agent" ? req.actor.agentId ?? null : req.actor.userId ?? null,
       contextSnapshot: {
+        ...retryConversationContext,
         triggeredBy: req.actor.type,
         originIdentityContextId: req.actor.identityContextId ?? null,
         responsibleUserId: req.actor.type === "agent" ? req.actor.onBehalfOfUserId ?? null : req.actor.userId ?? null,
