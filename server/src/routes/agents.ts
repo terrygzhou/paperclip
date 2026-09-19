@@ -1,3 +1,4 @@
+import { resolveAgentAppearance, agentAvatarUrl } from "@paperclipai/shared";
 import { listOpenRouterModels } from "../services/openrouter-models.js";
 import { prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings } from "../services/ai-connection-runtime.js";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE, AI_CONNECTION_CAPABILITIES, aiConnectionBindingSchema, type AiConnectionBinding } from "@paperclipai/shared";
@@ -3992,6 +3993,7 @@ export function agentRoutes(
         id: agentsTable.id,
         companyId: agentsTable.companyId,
         agentName: agentsTable.name,
+        agentAppearance: agentsTable.appearance,
         role: agentsTable.role,
         title: agentsTable.title,
         status: agentsTable.status,
@@ -4590,6 +4592,7 @@ export function agentRoutes(
             role: normalizedHireInput.role,
             title: normalizedHireInput.title ?? null,
             icon: normalizedHireInput.icon ?? null,
+            appearance: agent.appearance,
             reportsTo: normalizedHireInput.reportsTo ?? null,
             capabilities: normalizedHireInput.capabilities ?? null,
             adapterType: requestedAdapterType,
@@ -6604,6 +6607,7 @@ export function agentRoutes(
       createdAt: heartbeatRuns.createdAt,
       agentId: heartbeatRuns.agentId,
       agentName: agentsTable.name,
+        agentAppearance: agentsTable.appearance,
       adapterType: agentsTable.adapterType,
       logBytes: heartbeatRuns.logBytes,
       livenessState: heartbeatRuns.livenessState,
@@ -6654,6 +6658,8 @@ export function agentRoutes(
       const projections = await executionProjectionsForRuns(db, companyId, rows.map(run => run.id));
       res.json(await runRedactions.redactForRuns(companyId, await Promise.all(rows.map(async (run) => ({
         ...heartbeat.decorateActiveRunStatus(run),
+        agentAppearance: resolveAgentAppearance(run.agentAppearance, run.agentId),
+        avatarUrl: agentAvatarUrl(resolveAgentAppearance(run.agentAppearance, run.agentId), 512),
         execution: projections.get(run.id) ?? null,
         outputSilence: await heartbeat.buildRunOutputSilence(run),
       })))));
@@ -6663,6 +6669,8 @@ export function agentRoutes(
     const projections = await executionProjectionsForRuns(db, companyId, liveRuns.map(run => run.id));
     res.json(await runRedactions.redactForRuns(companyId, await Promise.all(liveRuns.map(async (run) => ({
       ...heartbeat.decorateActiveRunStatus(run),
+        agentAppearance: resolveAgentAppearance(run.agentAppearance, run.agentId),
+        avatarUrl: agentAvatarUrl(resolveAgentAppearance(run.agentAppearance, run.agentId), 512),
         execution: projections.get(run.id) ?? null,
       outputSilence: await heartbeat.buildRunOutputSilence(run),
     })))));
@@ -7242,6 +7250,7 @@ export function agentRoutes(
         createdAt: heartbeatRuns.createdAt,
         agentId: heartbeatRuns.agentId,
         agentName: agentsTable.name,
+        agentAppearance: agentsTable.appearance,
         adapterType: agentsTable.adapterType,
         logBytes: heartbeatRuns.logBytes,
         livenessState: heartbeatRuns.livenessState,
@@ -7269,6 +7278,8 @@ export function agentRoutes(
     const projections = await executionProjectionsForRuns(db, issue.companyId, liveRuns.map(run => run.id));
     res.json(await Promise.all(liveRuns.map(async (run) => ({
       ...heartbeat.decorateActiveRunStatus(run, { companyId: issue.companyId, issueId: issue.id }),
+      agentAppearance: resolveAgentAppearance(run.agentAppearance, run.agentId),
+      avatarUrl: agentAvatarUrl(resolveAgentAppearance(run.agentAppearance, run.agentId), 512),
       execution: projections.get(run.id) ?? null,
       outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
     }))));
@@ -7331,6 +7342,8 @@ export function agentRoutes(
       execution: await executionProjectionForRun(db, issue.companyId, run.id),
       agentId: agent.id,
       agentName: agent.name,
+      agentAppearance: agent.appearance,
+      avatarUrl: agent.avatarUrl,
       adapterType: agent.adapterType,
       outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
     });

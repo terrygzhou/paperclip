@@ -1,3 +1,4 @@
+import { agentAvatarRoutes } from "./routes/agent-avatars.js";
 import { aiConnectionRoutes } from "./routes/ai-connections.js";
 import { projectToolRoutes } from "./routes/project-tools.js";
 import { emailChannelService } from "./services/email-channels.js";
@@ -623,6 +624,7 @@ export async function createApp(
 
   // Mount API routes
   const api = Router();
+  api.use(agentAvatarRoutes());
   api.use(boardMutationGuard());
   api.use(
     "/health",
