@@ -292,6 +292,7 @@ import {
 } from "./native-session-executor.js";
 
 beforeEach(() => {
+  state.resolveRunnerBinary.mockReset().mockReturnValue("/tmp/paperclip-runnerd");
   state.resolveCurrentWakeCommentsBinding.mockReset().mockResolvedValue(null);
   state.assertCurrentWakeCommentsRead.mockReset().mockResolvedValue(undefined);
 });
@@ -10059,11 +10060,12 @@ describe("runnerd provider runtime wiring", () => {
     }
   });
 
-  it.each([false, true])("uses shared Codex and replaces only a stale runner image (stale=%s)", async (staleRunner) => {
+  it.each(["current", "stale", "missing"])("uses shared Codex and the server-owned replacement artifact (image=%s)", async (image) => {
+    const needsReplacement = image !== "current";
     // The mocked remote executes metadata probes; artifact staging only needs bytes.
     // Keep this regression independent of a locally compiled Rust runner binary.
     const controllerArtifact = join(isolatedStateDirectory, "paperclip-runnerd");
-    if (staleRunner) {
+    if (needsReplacement) {
       await writeFile(controllerArtifact, "fixture runner artifact");
       state.resolveRunnerBinary.mockReturnValueOnce(controllerArtifact);
     }
@@ -10078,7 +10080,7 @@ describe("runnerd provider runtime wiring", () => {
             binaryName: "paperclip-runnerd",
             packageName: "@paperclipai/paperclip-runner",
             binaryContractVersion: 2,
-            durableSessionCapabilities: staleRunner && command.command === "/usr/local/bin/paperclip-runnerd"
+            durableSessionCapabilities: image === "stale" && command.command === "/usr/local/bin/paperclip-runnerd"
               ? undefined
               : ["unlimited_runtime", "connection_lease_renewal"],
             prpTransportModes: ["listen_ws"],
@@ -10095,7 +10097,7 @@ describe("runnerd provider runtime wiring", () => {
         } else if (script === "uname -s; uname -m") {
           stdout = `${process.platform === "darwin" ? "Darwin" : "Linux"}\n${process.arch === "arm64" ? "arm64" : "x86_64"}\n`;
         } else if (script.includes("command -v paperclip-runnerd")) {
-          stdout = "/usr/local/bin/paperclip-runnerd\n";
+          stdout = image === "missing" ? "" : "/usr/local/bin/paperclip-runnerd\n";
         } else if (script.includes("command -v codex")) {
           stdout = script.includes("/opt/paperclip-runner/bin/codex")
             ? "/opt/paperclip-runner/bin/codex\n"
@@ -10140,7 +10142,7 @@ describe("runnerd provider runtime wiring", () => {
     await expect(transport.controlPlaneRegistration({})).rejects.toThrow(
       "reached-preinstalled-codex-verification",
     );
-    if (staleRunner) {
+    if (needsReplacement) {
       expect(transport.runnerBinary).toBe(controllerArtifact);
       expect(syncIn).toHaveBeenCalledTimes(1);
       expect(syncIn).toHaveBeenCalledWith([expect.objectContaining({

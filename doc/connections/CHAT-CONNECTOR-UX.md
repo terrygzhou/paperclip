@@ -221,6 +221,13 @@ HTTPS termination at a trusted deployment boundary must not create false URL-dri
 warnings for the internal HTTP hop; continue detecting genuine host, port, and
 path changes. Keep callback verification evidence separate for distinct surfaces.
 
+On a claimed Cloud instance, callback health can use the public host forwarded
+by the gateway after the provider authenticates the request. These hints are
+diagnostic evidence only: they must not affect authentication, routing, or the
+configured callback URL. Self-hosted instances continue using the request URL.
+Preserve gateway observations in dedicated diagnostic headers when another
+provider proxy replaces standard forwarded headers before reaching the tenant.
+
 ## Apply and verify
 
 For a requested redesign, identify the relevant principles and fix the concrete

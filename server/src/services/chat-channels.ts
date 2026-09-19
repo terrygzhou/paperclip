@@ -513,6 +513,7 @@ function canonicalCallbackUrl(value: string): string | null {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    url.hostname = url.hostname.replace(/\.$/, "");
     url.username = "";
     url.password = "";
     url.search = "";
@@ -544,10 +545,36 @@ type SlackCallbackInspection = {
   isUrlVerification: boolean;
 };
 
+// Cloud records the public request host in dedicated headers so provider edges
+// cannot replace it with their upstream host. Only use callback-health evidence on a
+// claimed Cloud instance, after provider authentication succeeded. It must not
+// change the Request passed to the adapter, signature verification, routing,
+// board identity, or the configured URL used to generate callbacks.
+function slackCallbackObservationUrl(request: Request): string | null {
+  const directUrl = canonicalCallbackUrl(request.url);
+  if (!directUrl || !runtimeCanonicalOrigin()) return directUrl;
+  const hasCloudEvidence = request.headers.has("x-paperclip-cloud-forwarded-host");
+  const host = request.headers.get(hasCloudEvidence ? "x-paperclip-cloud-forwarded-host" : "x-forwarded-host")?.trim();
+  const protocol = request.headers.get(hasCloudEvidence ? "x-paperclip-cloud-forwarded-proto" : "x-forwarded-proto")?.trim();
+  if (!host || /[\s/@\\?#,]/.test(host) || (protocol !== "https" && protocol !== "http")) return directUrl;
+  try {
+    const origin = new URL(`${protocol}://${host}`);
+    // Accept one authority only, never credentials, paths, queries, or lists.
+    if (!origin.host || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) return directUrl;
+    const observed = new URL(directUrl);
+    observed.protocol = origin.protocol;
+    observed.host = origin.host;
+    observed.port = origin.port;
+    return canonicalCallbackUrl(observed.toString());
+  } catch {
+    return directUrl;
+  }
+}
+
 async function inspectSlackCallback(
   request: Request,
 ): Promise<SlackCallbackInspection | null> {
-  const url = canonicalCallbackUrl(request.url);
+  const url = slackCallbackObservationUrl(request);
   if (!url) return null;
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   let body: string;
