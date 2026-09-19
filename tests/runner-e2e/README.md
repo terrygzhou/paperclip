@@ -784,3 +784,17 @@ with the test flow. Native provider runs do not require an unrelated host
 Changes to privileged worker setup must reach the default branch before a
 branch-targeted paid campaign can exercise them. The report job resolves its
 lockfile from its own trusted checkout, never from the tested branch.
+
+### Injected interruption diagnostics
+
+Everyday restart and Stop scenarios exempt only their recorded cancellation,
+graceful-shutdown interruption, or process-loss outcome. A later adapter error
+on that same run still fails immediately and fails the lifecycle grader. The
+run ID alone is not an exemption from recovery failures.
+
+The review-handoff case also requires proof that the parent was blocked before
+the review wake. When all tasks finish and persisted timestamps prove that the
+accepted review started before any parent run finished, the harness fails
+promptly with an unexercised-boundary diagnostic. Missing evidence in separately
+fetched snapshots does not trigger this rejection. Successful work alone does
+not prove that this recovery path was tested.
