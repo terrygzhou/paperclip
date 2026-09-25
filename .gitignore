@@ -79,3 +79,6 @@ tests/storybook-visual/playwright-report/
 .env.local
 test-results/
 .worktrees/
+
+# Retained local lifecycle behavior measurements
+.lifecycle-baseline/
