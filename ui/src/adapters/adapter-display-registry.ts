@@ -122,6 +122,11 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
     description: "Pi harness",
     icon: Terminal,
   },
+  dsh_local: {
+    label: "DSH",
+    description: "DeepSeek Harness (dsh) local runtime",
+    icon: Terminal,
+  },
   cursor: {
     label: "Cursor",
     description: "Cursor CLI harness",

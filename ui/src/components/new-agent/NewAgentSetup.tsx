@@ -125,7 +125,11 @@ function Setup({
   const chooseProvider = multiProvider || brandType === "hermes_local";
   const hasCredentialField =
     chooseProvider || Boolean(SETUP_CREDENTIAL_KEYS[adapterType]);
-  const showModel = !["cursor_cloud", "hermes_gateway"].includes(adapterType);
+  const showModel = ![
+    "cursor_cloud",
+    "hermes_gateway",
+    "dsh_local",
+  ].includes(adapterType);
   const [gatewayUrl, setGatewayUrl] = useState("");
   const [kimiModel, setKimiModel] = useState("");
   const [kimiBaseUrl, setKimiBaseUrl] = useState("");
@@ -137,6 +141,8 @@ function Setup({
   const efforts = isRunner ? [] : setupEfforts(adapterType, model);
   const [effort, setEffort] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
+  const [dshCommand, setDshCommand] = useState("");
+  const [dshCwd, setDshCwd] = useState("");
   const [environmentOverride, setEnvironmentOverride] = useState("");
   const [provider, setProvider] = useState("openrouter");
   const [apiKey, setApiKey] = useState("");
@@ -334,6 +340,8 @@ function Setup({
         model || (brandType === "codex_local" ? DEFAULT_CODEX_LOCAL_MODEL : ""),
       thinkingEffort: effort,
       dangerouslyBypassSandbox: adapterType === "codex_local",
+      command: adapterType === "dsh_local" ? dshCommand : defaultCreateValues.command,
+      cwd: adapterType === "dsh_local" ? dshCwd : defaultCreateValues.cwd,
       envBindings: nextConnection?.env ?? {},
       ...(isRunner
         ? {
@@ -1089,6 +1097,34 @@ function Setup({
                                   setBranch(event.target.value);
                                   resetTest();
                                 }}
+                              />
+                            </Field>
+                          </div>
+                        )}
+                        {adapterType === "dsh_local" && (
+                          <div className="grid gap-5 sm:grid-cols-2">
+                            <Field label="dsh binary" hint="Path to the dsh binary (default: dsh from PATH)">
+                              <Input
+                                aria-label="dsh binary"
+                                value={dshCommand}
+                                onChange={(event) => {
+                                  setDshCommand(event.target.value);
+                                  resetTest();
+                                }}
+                                placeholder="dsh"
+                                className={controlClass}
+                              />
+                            </Field>
+                            <Field label="Working directory" hint="Directory where dsh runs (default: agent home)">
+                              <Input
+                                aria-label="Working directory"
+                                value={dshCwd}
+                                onChange={(event) => {
+                                  setDshCwd(event.target.value);
+                                  resetTest();
+                                }}
+                                placeholder="/home/terry"
+                                className={controlClass}
                               />
                             </Field>
                           </div>

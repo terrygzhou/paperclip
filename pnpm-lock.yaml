@@ -248,6 +248,19 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/adapters/dsh-local:
+    dependencies:
+      '@paperclipai/adapter-utils':
+        specifier: workspace:*
+        version: link:../../adapter-utils
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/adapters/gemini-local:
     dependencies:
       '@paperclipai/adapter-utils':
@@ -903,6 +916,9 @@ importers:
       '@paperclipai/adapter-cursor-local':
         specifier: workspace:*
         version: link:../packages/adapters/cursor-local
+      '@paperclipai/adapter-dsh-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/dsh-local
       '@paperclipai/adapter-gemini-local':
         specifier: workspace:*
         version: link:../packages/adapters/gemini-local
@@ -7625,7 +7641,6 @@ packages:
 
   opencode-ai@1.18.29:
     resolution: {integrity: sha512-syIDVwlrYTgTOXzZe9SkInJWethbq6l3SNC762UeXyO0a9V0wGfd+U4yACvppwNBnhIsl0j2QPYYCyLpNaSomg==}
-    cpu: [arm64, x64]
     os: [darwin, linux, win32]
     hasBin: true
 

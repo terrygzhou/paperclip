@@ -130,6 +130,12 @@ import {
   listPiModels,
 } from "@paperclipai/adapter-pi-local/server";
 import { agentConfigurationDoc as piAgentConfigurationDoc } from "@paperclipai/adapter-pi-local";
+import {
+  execute as dshExecute,
+  testEnvironment as dshTestEnvironment,
+  sessionCodec as dshSessionCodec,
+} from "@paperclipai/adapter-dsh-local/server";
+import { agentConfigurationDoc as dshAgentConfigurationDoc } from "@paperclipai/adapter-dsh-local";
 import { BUILTIN_ADAPTER_TYPES } from "./builtin-adapter-types.js";
 import { buildExternalAdapters } from "./plugin-loader.js";
 import { getDisabledAdapterTypes } from "../services/adapter-plugin-store.js";
@@ -839,6 +845,76 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
+const dshLocalAdapter: ServerAdapterModule = {
+  type: "dsh_local",
+  runtimeToolDelivery: "environment",
+  execute: dshExecute,
+  testEnvironment: dshTestEnvironment,
+  sessionCodec: dshSessionCodec,
+  sessionManagement: getAdapterSessionManagement("dsh_local") ?? undefined,
+  models: [],
+  supportsLocalAgentJwt: true,
+  supportsInstructionsBundle: false,
+  requiresMaterializedRuntimeSkills: false,
+  getRuntimeCommandSpec: (config) => ({
+    command: readConfiguredCommand(config, "dsh"),
+    detectCommand: "dsh",
+    installCommand: null,
+  }),
+  agentConfigurationDoc: dshAgentConfigurationDoc,
+  getConfigSchema: () => ({
+    fields: [
+      {
+        key: "command",
+        label: "Command",
+        type: "text" as const,
+        default: "dsh",
+        hint: "The dsh binary. Defaults to dsh.",
+      },
+      {
+        key: "profile",
+        label: "DSH profile",
+        type: "text" as const,
+        default: "headless",
+        hint: "The dsh profile to boot. Defaults to headless.",
+      },
+      {
+        key: "profileArgs",
+        label: "Profile args",
+        type: "text" as const,
+        default: "",
+        hint: "Extra launcher flags passed before the task string (comma-separated).",
+      },
+      {
+        key: "cwd",
+        label: "Working directory",
+        type: "text" as const,
+        default: "",
+        hint: "Default absolute working directory for the agent process.",
+      },
+      {
+        key: "promptTemplate",
+        label: "Prompt template",
+        type: "text" as const,
+        default: "",
+        hint: "Optional user prompt template. The Paperclip wake payload is always injected.",
+      },
+      {
+        key: "timeoutSec",
+        label: "Timeout (s)",
+        type: "number" as const,
+        default: 600,
+      },
+      {
+        key: "graceSec",
+        label: "Grace period (s)",
+        type: "number" as const,
+        default: 20,
+      },
+    ],
+  }),
+};
+
 const adaptersByType = new Map<string, ServerAdapterModule>();
 
 // For builtin types that are overridden by an external adapter, we keep the
@@ -858,6 +934,7 @@ function registerBuiltInAdapters() {
     paperclipRunnerAdapter,
     openCodeLocalAdapter,
     piLocalAdapter,
+    dshLocalAdapter,
     cursorCloudAdapter,
     cursorLocalAdapter,
     geminiLocalAdapter,

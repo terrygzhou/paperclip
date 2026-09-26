@@ -25,6 +25,7 @@ export const AGENT_STATUSES = [
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
 export const AGENT_ADAPTER_TYPES = [
+  "dsh_local",
   "process",
   "http",
   "claude_local",
