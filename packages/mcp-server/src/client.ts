@@ -111,4 +111,41 @@ export class PaperclipApiClient {
 
     return parsedBody as T;
   }
+
+  /**
+   * Fetch a non-JSON (binary or text) response and return it as base64.
+   * Used for image endpoints (/org.png, /org.svg) and other byte payloads.
+   */
+  async requestBinary(
+    method: string,
+    path: string,
+  ): Promise<{ mimeType: string; base64: string; byteLength: number }> {
+    if (!path.startsWith("/")) {
+      throw new Error(`API path must start with "/": ${path}`);
+    }
+
+    const url = new URL(path.slice(1), `${this.config.apiUrl}/`);
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.config.apiKey}`,
+      Accept: "*/*",
+    };
+
+    const response = await fetch(url, { method, headers });
+    if (!response.ok) {
+      const parsedBody = await parseResponseBody(response);
+      throw new PaperclipApiError({
+        status: response.status,
+        method: method.toUpperCase(),
+        path,
+        body: parsedBody,
+        message: buildErrorMessage(method.toUpperCase(), path, response.status, parsedBody),
+      });
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const rawType = response.headers.get("content-type") ?? "application/octet-stream";
+    const mimeType = rawType.split(";")[0].trim() || "application/octet-stream";
+
+    return { mimeType, base64: buffer.toString("base64"), byteLength: buffer.byteLength };
+  }
 }

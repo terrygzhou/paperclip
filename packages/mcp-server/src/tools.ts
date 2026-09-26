@@ -18,14 +18,19 @@ import {
   linkIssueApprovalSchema,
 } from "@paperclipai/shared";
 import { PaperclipApiClient } from "./client.js";
-import { formatErrorResponse, formatTextResponse } from "./format.js";
+import {
+  formatErrorResponse,
+  formatImageResponse,
+  formatTextResponse,
+  type McpContentBlock,
+} from "./format.js";
 
 export interface ToolDefinition {
   name: string;
   description: string;
   schema: z.ZodObject;
   execute: (input: Record<string, unknown>) => Promise<{
-    content: Array<{ type: "text"; text: string }>;
+    content: McpContentBlock[];
   }>;
 }
 
@@ -34,6 +39,7 @@ function makeTool<TSchema extends z.ZodRawShape>(
   description: string,
   schema: z.ZodObject<TSchema>,
   execute: (input: z.infer<typeof schema>) => Promise<unknown>,
+  options: { image?: boolean; caption?: string } = {},
 ): ToolDefinition {
   return {
     name,
@@ -42,7 +48,12 @@ function makeTool<TSchema extends z.ZodRawShape>(
     execute: async (input) => {
       try {
         const parsed = schema.parse(input);
-        return formatTextResponse(await execute(parsed));
+        const result = await execute(parsed);
+        if (options.image) {
+          const img = result as { mimeType: string; base64: string; byteLength: number };
+          return formatImageResponse(img, options.caption ?? name);
+        }
+        return formatTextResponse(result);
       } catch (error) {
         return formatErrorResponse(error);
       }
@@ -675,8 +686,160 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
+      "paperclipGetOrgChart",
+      "Get the company org chart data (agent reporting hierarchy) as structured JSON",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/org`),
+    ),
+    makeTool(
+      "paperclipGetOrgChartImage",
+      "Get the company org chart rendered as a PNG image (returned as an MCP image block)",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestBinary("GET", `/companies/${client.resolveCompanyId(companyId)}/org.png`),
+      { image: true, caption: "Org chart PNG (live, from Paperclip API)" },
+    ),
+    makeTool(
+      "paperclipListCompanyMembers",
+      "List company members (humans and agents)",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/members`),
+    ),
+    makeTool(
+      "paperclipListLabels",
+      "List labels in a company",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/labels`),
+    ),
+    makeTool(
+      "paperclipGetDashboard",
+      "Get company dashboard data (summary metrics for the company home view)",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/dashboard`),
+    ),
+    makeTool(
+      "paperclipGetStats",
+      "Get company stats",
+      z.object({}),
+      async () => client.requestJson("GET", "/companies/stats"),
+    ),
+    makeTool(
+      "paperclipListActivity",
+      "List company activity entries",
+      z.object({ companyId: companyIdOptional, limit: z.number().int().positive().max(200).optional() }),
+      async ({ companyId, limit }) => {
+        const qs = limit ? `?limit=${limit}` : "";
+        return client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/activity${qs}`);
+      },
+    ),
+    makeTool(
+      "paperclipGetTimeline",
+      "Get company work timeline (recent work across issues/projects/goals), with optional date and scope filters",
+      z.object({
+        companyId: companyIdOptional,
+        from: z.string().optional(),
+        to: z.string().optional(),
+        userId: z.string().optional(),
+        goalId: z.string().guid().optional(),
+        projectId: z.string().guid().optional(),
+        issueId: issueIdSchema.optional(),
+        limit: z.number().int().positive().optional(),
+        offset: z.number().int().nonnegative().optional(),
+      }),
+      async ({ companyId, ...filters }) => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(filters)) {
+          if (value === undefined || value === null) continue;
+          params.set(key, String(value));
+        }
+        const qs = params.toString();
+        return client.requestJson(
+          "GET",
+          `/companies/${client.resolveCompanyId(companyId)}/timeline${qs ? `?${qs}` : ""}`,
+        );
+      },
+    ),
+    makeTool(
+      "paperclipListHeartbeatRuns",
+      "List heartbeat runs for a company (recent agent executions)",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/heartbeat-runs`),
+    ),
+    makeTool(
+      "paperclipGetHeartbeatRun",
+      "Get a heartbeat run by id",
+      z.object({ runId: z.string().min(1) }),
+      async ({ runId }) => client.requestJson("GET", `/heartbeat-runs/${encodeURIComponent(runId)}`),
+    ),
+    makeTool(
+      "paperclipSearchCompany",
+      "Search company data (issues, agents, projects, documents, ...) by query string",
+      z.object({
+        companyId: companyIdOptional,
+        q: z.string().min(1),
+        scope: z.string().optional(),
+        sort: z.string().optional(),
+        limit: z.number().int().positive().max(100).optional(),
+        offset: z.number().int().nonnegative().optional(),
+      }),
+      async ({ companyId, q, scope, sort, limit, offset }) => {
+        const params = new URLSearchParams();
+        params.set("q", q);
+        if (scope) params.set("scope", scope);
+        if (sort) params.set("sort", sort);
+        if (limit !== undefined) params.set("limit", String(limit));
+        if (offset !== undefined) params.set("offset", String(offset));
+        return client.requestJson(
+          "GET",
+          `/companies/${client.resolveCompanyId(companyId)}/search?${params.toString()}`,
+        );
+      },
+    ),
+    makeTool(
+      "paperclipListStatusCards",
+      "List status cards in a company",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/status-cards`),
+    ),
+    makeTool(
+      "paperclipListSecretsCatalog",
+      "List company secret metadata (id, name, key, status) — values are not returned",
+      z.object({ companyId: companyIdOptional }),
+      async ({ companyId }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/secrets/catalog`),
+    ),
+    makeTool(
+      "paperclipGetCostReport",
+      "Get a company cost report. Slugs: summary, finance-summary, window-spend, quota-windows, by-agent, by-agent-model, by-biller, by-project, by-provider, finance-by-biller, finance-by-kind, finance-events",
+      z.object({
+        companyId: companyIdOptional,
+        report: z
+          .enum([
+            "summary", "finance-summary", "window-spend", "quota-windows",
+            "by-agent", "by-agent-model", "by-biller", "by-project",
+            "by-provider", "finance-by-biller", "finance-by-kind", "finance-events",
+          ])
+          .default("summary"),
+      }),
+      async ({ companyId, report }) =>
+        client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/costs/${report}`),
+    ),
+    makeTool(
       "paperclipApiRequest",
-      "Make a JSON request to an existing Paperclip /api endpoint for unsupported operations",
+      "Make a JSON request to an existing Paperclip /api endpoint when no dedicated tool exists. " +
+      "The full OpenAPI surface is available at GET /api/openapi.json (838 endpoints). " +
+      "Common company endpoints: /companies/{id}/issues, /agents, /org, /org.png, /org.svg, /members, /labels, " +
+      "/dashboard, /activity, /timeline, /heartbeat-runs, /search, /goals, /projects, /approvals, " +
+      "/decisions, /status-cards, /secrets/catalog, /costs/{report}. " +
+      "Path must start with / (relative to /api) and must not contain '..'. " +
+      "Note: binary responses (images, downloads) are best via paperclipGetOrgChartImage or a direct fetch; " +
+      "this tool returns parsed JSON only.",
       apiRequestSchema,
       async ({ method, path, jsonBody }) => {
         if (!path.startsWith("/") || path.includes("..")) {
