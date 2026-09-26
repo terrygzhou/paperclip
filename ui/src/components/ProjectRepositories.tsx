@@ -4,8 +4,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Project, ProjectRepository } from "@paperclipai/shared";
 import { projectsApi } from "@/api/projects";
 import { queryKeys } from "@/lib/queryKeys";
+import type { NormalizedGitHubRepositoryUrl } from "@/lib/github-repository-url";
 import { ConnectionSetupFlow } from "@/features/connections/ConnectionSetupFlow";
 import { ProjectRepositoryInput, repositoryOptionsKey } from "./ProjectRepositoryInput";
+import { AddRepositoryUrlForm } from "./AddRepositoryUrlForm";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 
@@ -17,6 +19,16 @@ export function ProjectRepositories({ project }: { project: Project }) {
   });
   const [draft, setDraft] = useState<ProjectRepository[] | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const urlWorkspaces = project.workspaces.filter((workspace) => workspace.repoUrl && !workspace.metadata?.githubRepositoryId);
+  const addByUrl = useMutation({
+    mutationFn: (repo: NormalizedGitHubRepositoryUrl) => projectsApi.createWorkspace(project.id, { name: repo.fullName, repoUrl: repo.url, sourceType: "git_repo" }, project.companyId),
+    onSuccess: () => {
+      for (const ref of new Set([project.id, project.urlKey])) {
+        void client.invalidateQueries({ queryKey: queryKeys.projects.detail(ref) });
+      }
+      void client.invalidateQueries({ queryKey: queryKeys.projects.all(project.companyId) });
+    },
+  });
   const save = useMutation({
     mutationFn: () => projectsApi.setRepositories(project.id, (draft ?? saved).map((repo) => repo.id)),
     onSuccess: (updated) => {
@@ -31,7 +43,10 @@ export function ProjectRepositories({ project }: { project: Project }) {
   });
   return <section aria-label="Repositories" className="flex min-w-0 flex-col gap-4 py-4">
     <ProjectRepositoryInput companyId={project.companyId} selected={draft ?? saved} onChange={(repos) => { setDraft(repos); save.reset(); }} onConnect={() => setConnecting(true)} disabled={save.isPending} />
-    {project.workspaces.filter((workspace) => workspace.repoUrl && !workspace.metadata?.githubRepositoryId).map((workspace) => <LegacyProjectRepository key={workspace.id} workspace={workspace} projectRef={project.urlKey} />)}
+    <AddRepositoryUrlForm busy={addByUrl.isPending} error={addByUrl.isError ? addByUrl.error.message : null}
+      hint="No GitHub connection needed. Private repos also need a GITHUB_TOKEN company secret (Settings → Secrets)."
+      onSubmit={(repo) => addByUrl.mutate(repo)} />
+    {urlWorkspaces.map((workspace) => <LegacyProjectRepository key={workspace.id} workspace={workspace} projectRef={project.urlKey} />)}
     <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
       {save.isError && <p role="alert" className="mr-auto text-sm text-destructive">{save.error.message}</p>}
       {save.isSuccess && <span role="status" className="mr-auto text-sm text-muted-foreground">Changes saved</span>}

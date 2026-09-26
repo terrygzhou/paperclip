@@ -1,14 +1,16 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ProjectRepository } from "@paperclipai/shared";
-import { Folder, X } from "lucide-react";
+import { Folder, Link, X } from "lucide-react";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
+import type { NormalizedGitHubRepositoryUrl } from "../lib/github-repository-url";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { ProjectRepositoryInput, repositoryOptionsKey } from "./ProjectRepositoryInput";
+import { AddRepositoryUrlForm } from "./AddRepositoryUrlForm";
 import { ConnectionSetupFlow } from "@/features/connections/ConnectionSetupFlow";
 
 export function NewProjectDialog() {
@@ -22,10 +24,16 @@ export function NewProjectForm({ companyId, onClose }: { companyId: string; onCl
   const client = useQueryClient();
   const [name, setName] = useState("");
   const [repos, setRepos] = useState<ProjectRepository[]>([]);
+  const [urls, setUrls] = useState<NormalizedGitHubRepositoryUrl[]>([]);
   const [connecting, setConnecting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const create = useMutation({
-    mutationFn: () => projectsApi.create(companyId, { name: name.trim(), status: "planned", repositoryIds: repos.map((repo) => repo.id) }),
+    mutationFn: () => projectsApi.create(companyId, {
+      name: name.trim(),
+      status: "planned",
+      repositoryIds: repos.map((repo) => repo.id),
+      ...(urls.length ? { repositoryUrls: urls.map((repo) => repo.url) } : {}),
+    }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.projects.all(companyId) });
       onClose();
@@ -55,6 +63,18 @@ export function NewProjectForm({ companyId, onClose }: { companyId: string; onCl
         </div>
         <div role="region" aria-label="Source repositories" tabIndex={0} className="min-h-0 overflow-y-auto overscroll-contain px-5 pb-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring">
           <ProjectRepositoryInput companyId={companyId} selected={repos} onChange={setRepos} onConnect={() => setConnecting(true)} disabled={create.isPending} />
+          <div className="flex min-w-0 flex-col gap-3">
+            {urls.map((repo) => <div key={repo.url} className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-2">
+              <Link className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="truncate text-sm font-medium" title={repo.fullName}>{repo.fullName}</span>
+                <span className="truncate text-xs text-muted-foreground" title={repo.url}>{repo.url}</span>
+              </div>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${repo.fullName}`} disabled={create.isPending} onClick={() => setUrls((current) => current.filter((item) => item.url !== repo.url))}><X className="size-4" /></Button>
+            </div>)}
+            <AddRepositoryUrlForm busy={create.isPending} hint="No GitHub connection needed. Private repos also need a GITHUB_TOKEN company secret (Settings → Secrets)."
+              onSubmit={(repo) => setUrls((current) => current.some((item) => item.url === repo.url) ? current : [...current, repo])} />
+          </div>
         </div>
         {create.isError && <p role="alert" className="px-5 pt-3 text-sm text-destructive">{create.error.message}</p>}
         <div className="flex shrink-0 justify-end gap-2 px-5 py-5">
