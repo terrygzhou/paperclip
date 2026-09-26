@@ -1786,6 +1786,7 @@ export function authorizationService(db: Db | DbTransaction) {
         }
         if (
           input.action === "agent:read" ||
+          input.action === "agent:wake" ||
           input.action === "company_scope:read" ||
           input.action === "decision_queue:manage" ||
           input.action === "decision_queue:read" ||
@@ -1800,6 +1801,7 @@ export function authorizationService(db: Db | DbTransaction) {
           // Mirroring the tasks:assign carve-out above, viewers keep the
           // read-only visibility actions but not the privileged ones.
           const requiresNonViewer =
+            input.action === "agent:wake" ||
             input.action === "runtime:manage" ||
             input.action === "secrets:read" ||
             input.action === "decision_queue:manage" ||
