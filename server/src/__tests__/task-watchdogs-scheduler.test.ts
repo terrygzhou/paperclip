@@ -22,7 +22,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { taskWatchdogService } from "../services/task-watchdogs.ts";
+import { taskWatchdogService, type TaskWatchdogStopSnapshot } from "../services/task-watchdogs.ts";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -184,6 +184,11 @@ describeEmbeddedPostgres("task watchdog scheduler", () => {
       taskWatchdog: {
         watchedIssueId: sourceId,
         watchedIssueIdentifier: "WDOG-1",
+        stopSnapshot: {
+          version: 2,
+          materialLeaves: [],
+          waitsByIssueId: {},
+        },
         capabilities: {
           targetScope: {
             watchedIssueId: sourceId,
@@ -590,6 +595,87 @@ describeEmbeddedPostgres("task watchdog scheduler", () => {
       latestDocumentAt: new Date(later.getTime() + 1_000).toISOString(),
       latestWorkProductAt: new Date(later.getTime() + 2_000).toISOString(),
     });
+  });
+
+  it("keeps watchdog mutation scope valid when the live stop state shrank since the run's anchor", async () => {
+    const companyId = await seedCompany();
+    const sourceId = await seedIssue(companyId, { identifier: "WDOG-SHRINK-ANCHOR", status: "done" });
+    const leafId = await seedIssue(companyId, { parentId: sourceId, status: "in_progress" });
+    const agentId = await seedAgent(companyId);
+    await seedWatchdog(companyId, sourceId, agentId);
+    const { service } = createService();
+
+    await service.reconcileTaskWatchdogs({ companyId });
+    const [watchdog] = await db.select().from(issueWatchdogs).where(eq(issueWatchdogs.issueId, sourceId));
+    const anchorFingerprint = watchdog!.lastObservedFingerprint!;
+    const anchorSnapshot = watchdog!.lastObservedStopSnapshot as TaskWatchdogStopSnapshot | null;
+    expect(anchorSnapshot?.materialLeaves).toHaveLength(1);
+
+    // Completing the last material leaf shrinks the stopped state and
+    // re-stamps the stop fingerprint even though no source work was added.
+    await db
+      .update(issues)
+      .set({ status: "done", updatedAt: new Date(Date.now() + 60_000) })
+      .where(eq(issues.id, leafId));
+
+    const revalidated = await service.revalidateMutationScope({
+      kind: "watchdog",
+      watchdogId: watchdog!.id,
+      companyId,
+      watchedIssueId: sourceId,
+      stopFingerprint: anchorFingerprint,
+      stopSnapshot: anchorSnapshot,
+    });
+
+    expect(revalidated.allowed).toBe(true);
+    expect(revalidated.classification?.state).toBe("stopped");
+    if (revalidated.classification?.state !== "stopped") throw new Error("Expected stopped classification");
+    expect(revalidated.classification.stopFingerprint).not.toBe(anchorFingerprint);
+    expect(revalidated.classification.stoppedLeaves).toHaveLength(0);
+
+    // Legacy anchors that carry only the stop fingerprint still require an
+    // exact match, so the re-stamped stop keeps the mutation stale.
+    const legacyRevalidated = await service.revalidateMutationScope({
+      kind: "watchdog",
+      watchdogId: watchdog!.id,
+      companyId,
+      watchedIssueId: sourceId,
+      stopFingerprint: anchorFingerprint,
+      stopSnapshot: null,
+    });
+    expect(legacyRevalidated.allowed).toBe(false);
+    expect(legacyRevalidated.reason).toContain("stop fingerprint changed");
+  });
+
+  it("keeps the mutation scope stale when the live stop state grew since the run's anchor", async () => {
+    const companyId = await seedCompany();
+    const sourceId = await seedIssue(companyId, { identifier: "WDOG-GROW-ANCHOR", status: "done" });
+    const agentId = await seedAgent(companyId);
+    await seedWatchdog(companyId, sourceId, agentId);
+    const { service } = createService();
+
+    await service.reconcileTaskWatchdogs({ companyId });
+    const [watchdog] = await db.select().from(issueWatchdogs).where(eq(issueWatchdogs.issueId, sourceId));
+    const anchorFingerprint = watchdog!.lastObservedFingerprint!;
+    const anchorSnapshot = watchdog!.lastObservedStopSnapshot as TaskWatchdogStopSnapshot | null;
+    expect(anchorSnapshot?.materialLeaves).toHaveLength(0);
+
+    // New non-terminal work under the watched subtree grows the stopped state
+    // past the anchored snapshot; the re-stamped stop must stay stale.
+    await seedIssue(companyId, { parentId: sourceId, status: "in_progress" });
+
+    const revalidated = await service.revalidateMutationScope({
+      kind: "watchdog",
+      watchdogId: watchdog!.id,
+      companyId,
+      watchedIssueId: sourceId,
+      stopFingerprint: anchorFingerprint,
+      stopSnapshot: anchorSnapshot,
+    });
+
+    expect(revalidated.allowed).toBe(false);
+    expect(revalidated.reason).toContain("stop fingerprint changed");
+    expect(revalidated.classification?.state).toBe("stopped");
   });
 
   it("surfaces pending interaction kinds and approval ids in the wake and watchdog comment", async () => {

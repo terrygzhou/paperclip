@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { heartbeatRuns, issues, issueWatchdogs } from "@paperclipai/db";
+import type { TaskWatchdogStopSnapshot } from "./task-watchdogs.js";
 
 const MAX_WATCHDOG_SCOPE_ANCESTRY_DEPTH = 100;
 export const TASK_WATCHDOG_ORIGIN_KIND = "task_watchdog";
@@ -28,6 +29,7 @@ export type TaskWatchdogMutationScope =
       watchedIssueId: string;
       watchdogIssueId: string | null;
       stopFingerprint: string | null;
+      stopSnapshot: TaskWatchdogStopSnapshot | null;
     };
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -38,6 +40,19 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function readStopSnapshot(value: unknown): TaskWatchdogStopSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Partial<TaskWatchdogStopSnapshot>;
+  if (
+    candidate.version !== 2 ||
+    typeof candidate.fingerprint !== "string" ||
+    !Array.isArray(candidate.materialLeaves) ||
+    !candidate.waitsByIssueId ||
+    typeof candidate.waitsByIssueId !== "object"
+  ) return null;
+  return candidate as TaskWatchdogStopSnapshot;
+}
+
 function readTaskWatchdogContext(contextSnapshot: unknown) {
   const context = isPlainRecord(contextSnapshot) ? contextSnapshot : null;
   const taskWatchdog = isPlainRecord(context?.taskWatchdog) ? context.taskWatchdog : null;
@@ -45,6 +60,7 @@ function readTaskWatchdogContext(contextSnapshot: unknown) {
   return {
     watchedIssueId: readString(taskWatchdog?.watchedIssueId) ?? readString(context?.watchedIssueId),
     stopFingerprint: readString(taskWatchdog?.stopFingerprint) ?? readString(context?.stopFingerprint),
+    stopSnapshot: readStopSnapshot(taskWatchdog?.stopSnapshot),
   };
 }
 
@@ -118,6 +134,7 @@ export async function resolveTaskWatchdogMutationScope(
     watchedIssueId: watchdog.issueId,
     watchdogIssueId: watchdog.watchdogIssueId ?? null,
     stopFingerprint: taskWatchdog.stopFingerprint,
+    stopSnapshot: taskWatchdog.stopSnapshot,
   };
 }
 

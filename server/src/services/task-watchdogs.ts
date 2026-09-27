@@ -692,6 +692,7 @@ function watchdogWakeContext(input: {
       watchedIssueIdentifier: input.sourceIssue.identifier,
       watchedIssueTitle: input.sourceIssue.title,
       stopFingerprint: input.classification.stopFingerprint,
+      stopSnapshot: input.classification.stopSnapshot,
       pendingInteractions: input.classification.pendingInteractionsByIssueId,
       pendingApprovals: Object.fromEntries(Object.entries(input.classification.stopSnapshot.waitsByIssueId)
         .filter(([, waits]) => waits.pendingApprovalIds.length > 0)
@@ -1617,6 +1618,7 @@ export function taskWatchdogService(db: Db, deps: TaskWatchdogServiceDeps = {}) 
     companyId: string;
     watchedIssueId: string;
     stopFingerprint: string | null;
+    stopSnapshot?: TaskWatchdogStopSnapshot | null;
   }) {
     if (!scope.stopFingerprint) {
       return {
@@ -1644,7 +1646,15 @@ export function taskWatchdogService(db: Db, deps: TaskWatchdogServiceDeps = {}) 
 
     const input = await collectClassifierInput(watchdog.companyId, watchdog);
     const classification = classifyTaskWatchdogSubtree(input);
-    if (classification.state === "stopped" && classification.stopFingerprint === scope.stopFingerprint) {
+    // A live stop equal to the run's anchor, or only a shrink of the anchored
+    // stop snapshot, keeps the mutation scope valid even when the stop
+    // fingerprint was re-stamped after the run's wake registration.
+    if (
+      classification.state === "stopped" &&
+      (classification.stopFingerprint === scope.stopFingerprint ||
+        (scope.stopSnapshot != null &&
+          isShrinkOfReviewedSnapshot(classification.stopSnapshot, scope.stopSnapshot)))
+    ) {
       return { allowed: true as const, classification };
     }
 
