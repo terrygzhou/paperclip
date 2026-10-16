@@ -138,15 +138,27 @@ export async function validateAiApiKey(
   key: string,
   request: typeof fetch = fetch,
 ) {
-  const endpoints = {
+  // Honour operator-provided base URLs for OpenAI-compatible gateways so a
+  // self-hosted LiteLLM / vLLm / Ollama proxy passes validation instead of
+  // being sent to api.openai.com with a local-only master key.
+  const baseUrlOverride =
+    provider === "openai"
+      ? process.env.OPENAI_BASE_URL?.trim()
+      : provider === "anthropic"
+        ? process.env.ANTHROPIC_BASE_URL?.trim()
+        : undefined;
+  const endpoints: Record<string, string> = {
     anthropic: "https://api.anthropic.com/v1/models?limit=1",
     openai: "https://api.openai.com/v1/models",
     openrouter: "https://openrouter.ai/api/v1/key",
     xai: "https://api.x.ai/v1/models",
   };
+  const endpoint = baseUrlOverride
+    ? `${baseUrlOverride.replace(/\/+$/, "")}/models`
+    : endpoints[provider];
   let response: Response;
   try {
-    response = await request(endpoints[provider], {
+    response = await request(endpoint, {
       redirect: "error",
       signal: AbortSignal.timeout(15000),
       headers:
