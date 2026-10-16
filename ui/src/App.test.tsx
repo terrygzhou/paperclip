@@ -157,6 +157,36 @@ describe("CloudAccessGate", () => {
     unmountRoot(root);
   });
 
+  it("does not surface raw 403 errors as hard failures when board access returns a 401/403 ApiError", async () => {
+    const { ApiError } = await import("./api/client");
+    mockAuthApi.getSession.mockResolvedValue({
+      session: { id: "session-1", userId: "user-1" },
+      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+    });
+    mockAccessApi.getCurrentBoardAccess.mockRejectedValueOnce(
+      new ApiError("Board authentication required", 403, { error: "Board authentication required" }),
+    );
+
+    // When the session is present but board access 403s, the gate falls through
+    // to NoBoardAccessPage (data is undefined → not admin, no companies) rather
+    // than showing the raw server error string.
+    const root = renderGate(container);
+    await waitForText(container, "No organization access");
+    expect(container.textContent).not.toContain("Board authentication required");
+    unmountRoot(root);
+  });
+
+  it("redirects to sign-in when board access 401s and the session is gone (post sign-out)", async () => {
+    const { ApiError } = await import("./api/client");
+    mockAuthApi.getSession.mockResolvedValue(null);
+    // Simulates the post-sign-out refetch: no session, board access 403s.
+    // The gate should redirect to /auth, not display the raw 403 message.
+    const root = renderGate(container);
+    await waitForText(container, "Navigate:/auth?");
+    expect(container.textContent).not.toContain("Board authentication required");
+    unmountRoot(root);
+  });
+
   it("allows authenticated users with company access through to the board", async () => {
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },

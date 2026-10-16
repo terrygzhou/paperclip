@@ -78,7 +78,15 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     return <PaperclipLoading />;
   }
 
-  if (healthQuery.error || boardAccessQuery.error) {
+  // A 401/403 on board access is not a hard error — it means the session
+  // expired or the user has no organization membership. Only non-auth
+  // failures (5xx, network) are surfaced here; auth failures fall through
+  // to the "no session → redirect" or "no access → NoBoardAccessPage" paths.
+  const boardAccessAuthError =
+    boardAccessQuery.error instanceof ApiError &&
+    (boardAccessQuery.error.status === 401 || boardAccessQuery.error.status === 403);
+
+  if (healthQuery.error || (boardAccessQuery.error && !boardAccessAuthError)) {
     return (
       <div className="mx-auto max-w-xl py-10 text-sm text-destructive">
         {healthQuery.error instanceof Error
