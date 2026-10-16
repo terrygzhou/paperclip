@@ -13,7 +13,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Bind mount so the PG data dir lives under ~/docker (in the eywalink
+      # restic backup scope) instead of a docker-managed named volume.
+      # Migrated from named volume `docker_pgdata` on 2026-10-15.
+      - /home/terry/docker/paperclip/db:/var/lib/postgresql/data
 
   server:
     build:

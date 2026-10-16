@@ -237,6 +237,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const command = asString(config.command, "pi");
   const model = asString(config.model, "").trim();
   const thinking = asString(config.thinking, "").trim();
+  // Operator-pinnable tool allowlist. When unset (the default), the --tools
+  // flag is omitted so Pi uses its built-in default toolset. Passing an
+  // explicit allowlist can resolve to an empty tool set in some Pi builds
+  // (e.g. 0.87.x), which strips the model of every tool and makes it emit
+  // tool calls as literal text instead of executing them.
+  const tools = asString(config.tools, "").trim();
 
   // Parse model into provider and model id
   const provider = parseModelProvider(model);
@@ -677,14 +683,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       if (modelId) args.push("--model", modelId);
       if (thinking) args.push("--thinking", thinking);
 
-      args.push("--tools", "read,bash,edit,write,grep,find,ls");
+      // Operator-pinnable tool allowlist: only forward it when the agent
+      // explicitly pins one. Omitting the flag lets Pi use its built-in
+      // default toolset; a hardcoded allowlist can resolve to an empty tool
+      // set on some Pi builds (0.87.x), stripping the model of every tool.
+      if (tools) args.push("--tools", tools);
       args.push("--session", sessionFile);
       args.push("--skill", remoteSkillsDir ?? PI_AGENT_SKILLS_DIR);
 
       if (extraArgs.length > 0) args.push(...extraArgs);
 
-      // Add the user prompt as the last argument
-      args.push(userPrompt);
+      // The user prompt is delivered via stdin (see the spawn call below),
+      // not as a positional argv element: the rendered prompt can exceed the
+      // OS per-argument limit (Linux caps one argv element at 128KiB, and a
+      // fat issue's comment thread renders past it), which aborted the spawn
+      // with E2BIG. `pi -p` reads the prompt from stdin when no positional
+      // message is given — the same transport codex_local uses.
+      if (userPrompt.length === 0) args.push(userPrompt);
 
       return args;
     };
@@ -735,6 +750,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const proc = await runAdapterExecutionTargetProcess(runId, runtimeExecutionTarget, command, args, {
         cwd,
         env: executionTargetIsRemote ? env : runtimeEnv,
+        // Deliver the prompt on stdin: `pi -p` consumes it when no positional
+        // message is given, and it sidesteps the kernel's per-argv-element
+        // size cap that E2BIG-aborted large prompts. Empty prompt (resume
+        // delta case) writes an immediately-closed stdin.
+        stdin: userPrompt,
         timeoutSec,
         graceSec,
         onSpawn,
