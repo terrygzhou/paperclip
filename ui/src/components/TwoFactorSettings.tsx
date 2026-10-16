@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Copy, KeyRound, LoaderCircle, ShieldCheck, ShieldOff } from "lucide-react";
 import { authApi, type EnableTotpResult } from "@/api/auth";
 import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import QRCode from "qrcode";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,17 @@ export function TwoFactorSettings({
     setEnrollResult(null);
     setActionError(null);
   }
+
+  // Render the otpauth:// URI as a scannable QR (client-side) so
+  // authenticator apps can be provisioned without a server round-trip.
+  const [qrSvg, setQrSvg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enrollResult) { setQrSvg(null); return; }
+    let cancelled = false;
+    QRCode.toString(enrollResult.totpURI, { type: "svg", margin: 4, width: 240 },
+      (err, svg) => { if (!cancelled && !err) setQrSvg(svg); });
+    return () => { cancelled = true; };
+  }, [enrollResult]);
 
   const enableMutation = useMutation({
     mutationFn: () => authApi.enableTotp(password),
@@ -204,6 +216,17 @@ export function TwoFactorSettings({
       {/* Enroll step 2 — verify TOTP + show backup codes */}
       {state === "verify-enroll" && enrollResult && (
         <div className="space-y-4">
+          {/* QR code — scan this to add the account to an authenticator app */}
+          {qrSvg && (
+            <div className="space-y-1.5">
+              <Label>Scan to add to your authenticator app</Label>
+              <div
+                className="inline-block rounded-md border border-border bg-white p-2"
+                dangerouslySetInnerHTML={{ __html: qrSvg }}
+              />
+            </div>
+          )}
+
           {/* totpURI — the otpauth:// URI to scan or copy into an authenticator app */}
           <div className="space-y-1.5">
             <Label>Authenticator app URI</Label>
