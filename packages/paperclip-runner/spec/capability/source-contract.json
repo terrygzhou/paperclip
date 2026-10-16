@@ -53,7 +53,22 @@
     "paperclipUnlinkIssueApproval": ["optional_agent_tool", "unlink_approval"],
     "paperclipApprovalDecision": ["optional_agent_tool", "decide_approval"],
     "paperclipAddApprovalComment": ["optional_agent_tool", "comment_on_approval"],
-    "paperclipApiRequest": ["optional_agent_tool", "test_only_api_escape_hatch"]
+
+    "paperclipApiRequest": ["optional_agent_tool", "test_only_api_escape_hatch"],
+    "paperclipGetOrgChart": ["optional_agent_tool", "get_org_chart"],
+    "paperclipGetOrgChartImage": ["optional_agent_tool", "get_org_chart_image"],
+    "paperclipListCompanyMembers": ["optional_agent_tool", "list_company_members"],
+    "paperclipListLabels": ["optional_agent_tool", "list_labels"],
+    "paperclipGetDashboard": ["optional_agent_tool", "get_company_dashboard"],
+    "paperclipGetStats": ["optional_agent_tool", "get_company_stats"],
+    "paperclipListActivity": ["optional_agent_tool", "list_company_activity"],
+    "paperclipGetTimeline": ["optional_agent_tool", "get_company_timeline"],
+    "paperclipListHeartbeatRuns": ["optional_agent_tool", "list_heartbeat_runs"],
+    "paperclipGetHeartbeatRun": ["optional_agent_tool", "get_heartbeat_run"],
+    "paperclipSearchCompany": ["optional_agent_tool", "search_company"],
+    "paperclipListStatusCards": ["optional_agent_tool", "list_status_cards"],
+    "paperclipListSecretsCatalog": ["optional_agent_tool", "list_secrets_catalog"],
+    "paperclipGetCostReport": ["optional_agent_tool", "get_cost_report"]
   },
   "evalGroups": {
     "hb": ["control_plane_owned", "control_plane_invariant", "get_task_context", "active_task_context"],

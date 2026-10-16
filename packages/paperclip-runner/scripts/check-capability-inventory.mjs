@@ -10,6 +10,7 @@ import {
   validateInventories,
 } from "./lib/capability-inventory.mjs";
 
+
 const packageRoot = resolve(import.meta.dirname, "..");
 const readInventory = async (name) => decodeInventory(await readFile(resolve(packageRoot, `spec/capability/${name}.yaml`), "utf8"));
 const inventories = {

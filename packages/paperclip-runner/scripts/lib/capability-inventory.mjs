@@ -73,6 +73,20 @@ const legacyMcpFoldTargets = {
   paperclipApprovalDecision: "eval:ap-approval-wake-01",
   paperclipAddApprovalComment: "eval:ap-approval-deny-01",
   paperclipApiRequest: "eval:rf-api-404-report-01",
+  paperclipGetOrgChart: "eval:rf-api-mgr-heartbeat-01",
+  paperclipGetOrgChartImage: "eval:rf-api-mgr-heartbeat-01",
+  paperclipListCompanyMembers: "eval:rf-api-mgr-heartbeat-01",
+  paperclipListLabels: "eval:se-q-filters-01",
+  paperclipGetDashboard: "eval:rf-api-mgr-heartbeat-01",
+  paperclipGetStats: "eval:rf-api-mgr-heartbeat-01",
+  paperclipListActivity: "eval:rf-api-mgr-heartbeat-01",
+  paperclipGetTimeline: "eval:rf-api-mgr-heartbeat-01",
+  paperclipListHeartbeatRuns: "eval:rf-api-mgr-heartbeat-01",
+  paperclipGetHeartbeatRun: "eval:rf-api-mgr-heartbeat-01",
+  paperclipSearchCompany: "eval:se-q-filters-01",
+  paperclipListStatusCards: "eval:rf-api-mgr-heartbeat-01",
+  paperclipListSecretsCatalog: "eval:rs-secret-hygiene-01",
+  paperclipGetCostReport: "eval:rf-api-mgr-heartbeat-01",
 };
 
 const sourceHeader = "# GENERATED FILE — DO NOT EDIT. Run pnpm generate:capability-inventory.\n";
@@ -247,7 +261,7 @@ export async function buildMcpInventory(repoRoot) {
 
 export function validateInventories(inventories) {
   const errors = [];
-  const expectedCounts = { capabilities: 155, evaluations: 106, legacyMcpAliases: 42 };
+  const expectedCounts = { capabilities: 155, evaluations: 106, legacyMcpAliases: 56 };
   const normativeNames = ["capabilities", "evaluations"];
   const normativeRows = new Map();
   const globalNormativeIds = new Set();
