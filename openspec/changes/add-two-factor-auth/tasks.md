@@ -28,7 +28,7 @@
 
 ## 5. Verification and hand-off
 
-- [ ] 5.1 Live end-to-end: enable → verify → sign-in gated → verify → disable, confirm all 200s
+- [x] 5.1 Live end-to-end: enable → verify → sign-in gated → verify → disable, confirm all 200s
 - [x] 5.2 Run pnpm check:token-gates if any UI changes touch ui/src/components or ui/src/pages
 - [x] 5.3 Run pnpm test:run (Vitest) on the affected packages before committing
 - [ ] 5.4 Fill in the PR template (.github/PULL_REQUEST_TEMPLATE.md) including Model Used
