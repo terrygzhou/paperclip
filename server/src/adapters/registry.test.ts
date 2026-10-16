@@ -61,6 +61,8 @@ describe("built-in runtime connection tool delivery", () => {
         ["dsh_local", "environment"],
         ["gemini_local", "environment"],
     ["grok_local", "environment"],
+    ["hermes_gateway", "invocation_context"],
+    ["hermes_local", "environment"],
     ["kimi_local", "environment"],
     ["openclaw_gateway", "invocation_context"],
     ["opencode_local", "environment"],

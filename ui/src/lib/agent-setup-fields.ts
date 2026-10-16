@@ -10,10 +10,20 @@ export const SETUP_CREDENTIAL_KEYS: Record<string, string> = {
   cursor_cloud: "CURSOR_API_KEY",
   gemini_local: "GEMINI_API_KEY",
   kimi_local: "KIMI_MODEL_API_KEY",
+  hermes_gateway: "API_SERVER_KEY",
 };
 
-export function setupProviderKeys(_adapter: string) {
-  return PROVIDER_ENV_KEYS;
+export const HERMES_PROVIDER_KEYS: Record<string, string> = {
+  openrouter: "OPENROUTER_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  zai: "ZAI_API_KEY",
+  "kimi-coding": "KIMI_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+};
+
+export function setupProviderKeys(adapter: string) {
+  return adapter === "hermes_local" ? HERMES_PROVIDER_KEYS : PROVIDER_ENV_KEYS;
 }
 
 export function setupEfforts(adapter: string, model = ""): string[] {
@@ -42,4 +52,6 @@ export const SETUP_LOGIN_HINTS: Record<string, string> = {
     "Use a Kimi API key and model settings below, or run kimi login on the selected environment's host.",
   grok_local:
     "Grok Build uses its CLI sign-in. Run grok login on the selected environment's host, then test the connection here.",
+  hermes_local:
+    "Use a provider API key, or the existing Hermes provider configuration on the selected environment's host.",
 };

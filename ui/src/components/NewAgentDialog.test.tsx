@@ -150,6 +150,7 @@ it("offers Claude, Codex, OpenCode, and Grok on Cloud, even with the runner enab
         "grok_local",
         "kimi_local",
         "pi_local",
+        "hermes_local",
         "paperclip_runner",
       ].map((type) => ({ type, loaded: true })),
     );

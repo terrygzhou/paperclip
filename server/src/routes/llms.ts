@@ -3,9 +3,12 @@ import type { Db } from "@paperclipai/db";
 import { AGENT_ICON_NAMES } from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
 import { listServerAdapters } from "../adapters/index.js";
+import { hermesGatewayAgentConfigurationDoc } from "../adapters/hermes-gateway-doc.js";
 import { agentService } from "../services/agents.js";
 
-const pluginOnlyAdapterDocs = new Map<string, string>();
+const pluginOnlyAdapterDocs = new Map<string, string>([
+  ["hermes_gateway", hermesGatewayAgentConfigurationDoc],
+]);
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
   if (!agent.permissions || typeof agent.permissions !== "object") return false;

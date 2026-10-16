@@ -15,7 +15,7 @@ const meta = {
     initialScreen: { control: "select", options: ["name", "adapter", "connect", "runtime", "saved"] },
     initialRunnerProvider: { control: "select", options: ["Codex (app server)", "Claude (ACPX)", "OpenCode"] },
     initialConnectionMethod: { control: "select", options: ["subscription", "api"] },
-    initialAdapter: { control: "select", options: [null, "claude_local", "codex_local", "cursor", "cursor_cloud", "gemini_local", "grok_local", "kimi_local", "opencode_local", "pi_local",  "paperclip_runner"] },
+    initialAdapter: { control: "select", options: [null, "claude_local", "codex_local", "cursor", "cursor_cloud", "gemini_local", "grok_local", "kimi_local", "opencode_local", "pi_local", "hermes_local", "paperclip_runner"] },
   },
   // Remount when Storybook controls change; normal wizard navigation keeps drafts.
   render: args => <NewAgentWizard key={JSON.stringify(args)} {...args} />,
@@ -38,6 +38,7 @@ export const CursorCloudConfiguration: Story = { args: { initialScreen: "runtime
 export const GeminiConfiguration: Story = { args: { initialScreen: "runtime", initialName: "Darnold", initialAdapter: "gemini_local" } };
 export const GrokBuildConfiguration: Story = { args: { initialScreen: "runtime", initialName: "Darnold", initialAdapter: "grok_local" } };
 export const KimiConfiguration: Story = { args: { initialScreen: "runtime", initialName: "Darnold", initialAdapter: "kimi_local" } };
+export const HermesConfiguration: Story = { args: { initialScreen: "runtime", initialName: "Darnold", initialAdapter: "hermes_local" } };
 export const Confirmation: Story = { name: "06 · Confirmation", args: { initialScreen: "saved", initialName: "Darnold", initialAdapter: "opencode_local" } };
 export const NewAgentEntryPoint: Story = { name: "New agent entry point", args: { initialOpen: false } };
 export const MobileAdapterPicker: Story = { name: "Mobile · Adapter picker", args: { initialScreen: "adapter", initialName: "Darnold" }, globals: { viewport: { value: "mobile1", isRotated: false } } };

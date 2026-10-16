@@ -864,6 +864,7 @@ const GIT_SENSITIVE_LOCAL_ADAPTER_TYPES = new Set([
   "cursor",
   "gemini_local",
   "grok_local",
+  "hermes_local",
   "kimi_local",
   "opencode_local",
   "pi_local",
@@ -1252,6 +1253,7 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "codex_local",
   "cursor",
   "gemini_local",
+  "hermes_local",
   "kimi_local",
   "opencode_local",
   "pi_local",
@@ -5304,11 +5306,22 @@ export function buildExplicitResumeSessionOverride(input: {
   const resumeRunSessionIdBefore = truncateDisplayId(
     input.resumeRunSessionIdBefore,
   );
-  const desiredDisplayId = (resumeRunSessionIdAfter ?? resumeRunSessionIdBefore);
-  const runSessionParams = normalizeResumeParamsForAdapter(
-    input.adapterType,
-    input.sessionCodec.deserialize(input.resumeRunSessionParams ?? null),
-  );
+  const desiredDisplayId = requiresCanonicalSessionIds(input.adapterType)
+    ? isCanonicalSessionIdForAdapter(input.adapterType, resumeRunSessionIdAfter)
+      ? resumeRunSessionIdAfter
+      : isCanonicalSessionIdForAdapter(
+            input.adapterType,
+            resumeRunSessionIdBefore,
+          )
+        ? resumeRunSessionIdBefore
+        : null
+    : (resumeRunSessionIdAfter ?? resumeRunSessionIdBefore);
+  const runSessionParams = requiresCanonicalSessionIds(input.adapterType)
+    ? normalizeResumeParamsForAdapter(
+        input.adapterType,
+        input.sessionCodec.deserialize(input.resumeRunSessionParams ?? null),
+      )
+    : null;
   const runSessionDisplayId = truncateDisplayId(
     readNonEmptyString(runSessionParams?.sessionId),
   );
@@ -5320,7 +5333,15 @@ export function buildExplicitResumeSessionOverride(input: {
   );
   const taskSessionRawDisplayId = input.taskSession?.sessionDisplayId ?? null;
   const taskSessionDisplayId = truncateDisplayId(
-    (taskSessionRawDisplayId ??
+    requiresCanonicalSessionIds(input.adapterType)
+      ? (readNonEmptyString(taskSessionParams?.sessionId) ??
+          (isCanonicalSessionIdForAdapter(
+            input.adapterType,
+            taskSessionRawDisplayId,
+          )
+            ? taskSessionRawDisplayId
+            : null))
+      : (taskSessionRawDisplayId ??
           (input.sessionCodec.getDisplayId
             ? input.sessionCodec.getDisplayId(taskSessionParams)
             : null) ??
@@ -5328,6 +5349,8 @@ export function buildExplicitResumeSessionOverride(input: {
   );
   const canReuseTaskSessionParams =
     input.taskSession != null &&
+    (!requiresCanonicalSessionIds(input.adapterType) ||
+      taskSessionParams != null) &&
     (input.taskSession.lastRunId === input.resumeFromRunId ||
       (!!desiredDisplayId && taskSessionDisplayId === desiredDisplayId));
   const sessionParams = canReuseTaskSessionParams
@@ -9048,12 +9071,21 @@ export function resolveSkillTestRunCompletionForHeartbeatOutcome(
   return null;
 }
 
+const HERMES_ADAPTER_TYPE = "hermes_local";
+const HERMES_SESSION_ID_REGEX =
+  /^(?:\d{8}_\d{6}_[A-Za-z0-9_-]{4,}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+
+function requiresCanonicalSessionIds(adapterType: string | null | undefined) {
+  return adapterType === HERMES_ADAPTER_TYPE;
+}
+
 function isCanonicalSessionIdForAdapter(
   adapterType: string | null | undefined,
   sessionId: string | null | undefined,
 ) {
   if (!sessionId) return false;
-  return true;
+  if (!requiresCanonicalSessionIds(adapterType)) return true;
+  return HERMES_SESSION_ID_REGEX.test(sessionId);
 }
 
 function normalizeResumeParamsForAdapter(
@@ -9062,7 +9094,11 @@ function normalizeResumeParamsForAdapter(
 ) {
   const normalized = normalizeSessionParams(params);
   if (!normalized) return null;
-  return normalized;
+  if (!requiresCanonicalSessionIds(adapterType)) return normalized;
+  const sessionId = readNonEmptyString(normalized.sessionId);
+  return isCanonicalSessionIdForAdapter(adapterType, sessionId)
+    ? normalized
+    : null;
 }
 
 export function resolveNextSessionState(input: {
@@ -9091,7 +9127,7 @@ export function resolveNextSessionState(input: {
     };
   }
 
-  {
+  if (!requiresCanonicalSessionIds(adapterType)) {
     const explicitParams = adapterResult.sessionParams;
     const hasExplicitParams = adapterResult.sessionParams !== undefined;
     const hasExplicitSessionId = adapterResult.sessionId !== undefined;
@@ -9144,8 +9180,18 @@ export function resolveNextSessionState(input: {
       normalizeResumeParamsForAdapter(adapterType, previousParams),
     ),
   );
-  const validPreviousDisplayId = previousDisplayId;
-  const validPreviousLegacySessionId = previousLegacySessionId;
+  const validPreviousDisplayId = isCanonicalSessionIdForAdapter(
+    adapterType,
+    previousDisplayId,
+  )
+    ? previousDisplayId
+    : null;
+  const validPreviousLegacySessionId = isCanonicalSessionIdForAdapter(
+    adapterType,
+    previousLegacySessionId,
+  )
+    ? previousLegacySessionId
+    : null;
   const previousState = () => {
     const displayId = truncateDisplayId(
       readNonEmptyString(previousSerializedParams?.sessionId) ??
@@ -9169,9 +9215,19 @@ export function resolveNextSessionState(input: {
   const explicitParams = adapterResult.sessionParams;
   const hasExplicitParams = adapterResult.sessionParams !== undefined;
   const explicitSessionId = readNonEmptyString(adapterResult.sessionId);
-  const validExplicitSessionId = explicitSessionId;
+  const validExplicitSessionId = isCanonicalSessionIdForAdapter(
+    adapterType,
+    explicitSessionId,
+  )
+    ? explicitSessionId
+    : null;
   const explicitDisplayId = readNonEmptyString(adapterResult.sessionDisplayId);
-  const validExplicitDisplayId = explicitDisplayId;
+  const validExplicitDisplayId = isCanonicalSessionIdForAdapter(
+    adapterType,
+    explicitDisplayId,
+  )
+    ? explicitDisplayId
+    : null;
   const explicitSerializedParams = hasExplicitParams
     ? normalizeResumeParamsForAdapter(
         adapterType,
@@ -9191,13 +9247,9 @@ export function resolveNextSessionState(input: {
     adapterType,
     codec.serialize({ sessionId: explicitCanonicalSessionId }),
   );
-  const displayIdFromCodec: string | null =
-    codec.getDisplayId != null
-      ? codec.getDisplayId!(serialized)
-      : null;
   const displayId = truncateDisplayId(
     readNonEmptyString(serialized?.sessionId) ??
-      displayIdFromCodec ??
+      (codec.getDisplayId ? codec.getDisplayId(serialized) : null) ??
       explicitCanonicalSessionId,
   );
   const legacySessionId =
@@ -12192,8 +12244,10 @@ export function heartbeatService(
       : null;
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const resumeRunResult = parseObject(resumeRun.resultJson);
-    const resumeRunSessionId = readNonEmptyString(resumeRunResult.sessionId) ??
-      readNonEmptyString(resumeRunResult.session_id);
+    const resumeRunSessionId = requiresCanonicalSessionIds(agent.adapterType)
+      ? (readNonEmptyString(resumeRunResult.sessionId) ??
+        readNonEmptyString(resumeRunResult.session_id))
+      : null;
     const sessionOverride = buildExplicitResumeSessionOverride({
       adapterType: agent.adapterType,
       resumeFromRunId,
@@ -22573,7 +22627,20 @@ export function heartbeatService(
           readNonEmptyString(runtimeSessionParams?.sessionId) ??
           runtimeSessionFallback,
       );
-      let previousSessionDisplayId = runtimeSessionDisplayId;
+      let previousSessionDisplayId = requiresCanonicalSessionIds(
+        agent.adapterType,
+      )
+        ? truncateDisplayId(
+            readNonEmptyString(previousSessionParams?.sessionId) ??
+              (isCanonicalSessionIdForAdapter(
+                agent.adapterType,
+                runtimeSessionDisplayId,
+              )
+                ? runtimeSessionDisplayId
+                : null) ??
+              runtimeSessionFallback,
+          )
+        : runtimeSessionDisplayId;
       let runtimeSessionIdForAdapter =
         readNonEmptyString(runtimeSessionParams?.sessionId) ??
         runtimeSessionFallback;

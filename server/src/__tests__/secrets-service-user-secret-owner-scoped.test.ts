@@ -132,7 +132,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
       companyId,
       adapterConfig,
       { ...ownerScopedConsumer, responsibleUserId: "user-1" },
-      { adapterType: "openclaw_gateway", userSecretMediation: "owner_scoped" },
+      { adapterType: "hermes_gateway", userSecretMediation: "owner_scoped" },
     );
 
     expect(resolved.config.env).toEqual({ GH_TOKEN: "ghp_owner_value" });
@@ -165,7 +165,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
         companyId,
         adapterConfig,
         { ...ownerScopedConsumer, actorId: null, responsibleUserId: null },
-        { adapterType: "openclaw_gateway", userSecretMediation: "owner_scoped" },
+        { adapterType: "hermes_gateway", userSecretMediation: "owner_scoped" },
       ),
     ).rejects.toMatchObject({
       status: 422,
@@ -198,7 +198,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
       companyId,
       adapterConfig,
       { ...ownerScopedConsumer, responsibleUserId: "user-1" },
-      { adapterType: "openclaw_gateway", userSecretMediation: "owner_scoped" },
+      { adapterType: "hermes_gateway", userSecretMediation: "owner_scoped" },
     );
 
     expect(resolved.config.env).toEqual({ COMPANY_TOKEN: "company-secret-value" });
@@ -235,7 +235,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
         companyId,
         adapterConfig,
         { ...ownerScopedConsumer, responsibleUserId: "user-1", allowedBindingIds: ["some-binding-id"] },
-        { adapterType: "openclaw_gateway", userSecretMediation: "owner_scoped" },
+        { adapterType: "hermes_gateway", userSecretMediation: "owner_scoped" },
       ),
     ).rejects.toMatchObject({
       status: 422,
@@ -273,7 +273,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
         companyId,
         adapterConfig,
         { ...ownerScopedConsumer, responsibleUserId: "user-1", allowedBindingIds: [] },
-        { adapterType: "openclaw_gateway", userSecretMediation: "owner_scoped" },
+        { adapterType: "hermes_gateway", userSecretMediation: "owner_scoped" },
       ),
     ).rejects.toMatchObject({
       status: 422,
@@ -321,7 +321,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
         companyId,
         adapterConfig,
         declaredConsumer,
-        { adapterType: "openclaw_gateway" },
+        { adapterType: "hermes_gateway" },
       ),
     ).rejects.toMatchObject({
       status: 422,
@@ -345,7 +345,7 @@ describeEmbeddedPostgres("secretService resolveAdapterConfigForRuntime — userS
       companyId,
       adapterConfig,
       declaredConsumer,
-      { adapterType: "openclaw_gateway" },
+      { adapterType: "hermes_gateway" },
     );
     expect(resolved.config.env).toEqual({ GH_TOKEN: "ghp_owner_value" });
   });

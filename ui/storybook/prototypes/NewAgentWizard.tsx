@@ -38,14 +38,14 @@ import { models as kimiModels } from "@paperclipai/adapter-kimi-local";
 const modelLists = {
   claude_local: claudeModels, codex_local: codexModels, opencode_local: openCodeModels,
   cursor: cursorModels, gemini_local: geminiModels, grok_local: grokModels, kimi_local: kimiModels,
-  cursor_cloud: [], pi_local: [],
+  cursor_cloud: [], pi_local: [], hermes_local: [],
 };
 
 // Review-only flow. All edits and the simulated hire live in React state;
 // importing this from Storybook never creates an agent or contacts a provider.
 export const NEW_AGENT_ADAPTERS = [
   "claude_local", "codex_local", "cursor", "cursor_cloud", "gemini_local",
-  "grok_local", "kimi_local", "opencode_local", "pi_local", "paperclip_runner",
+  "grok_local", "kimi_local", "opencode_local", "pi_local", "hermes_local", "paperclip_runner",
 ] as const;
 export type NewAgentAdapter = typeof NEW_AGENT_ADAPTERS[number];
 export type NewAgentScreen = "name" | "adapter" | "connect" | "runtime" | "saved";

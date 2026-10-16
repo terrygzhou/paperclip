@@ -39,12 +39,16 @@ const externalAdapter: ServerAdapterModule = {
 describe("server adapter registry", () => {
   beforeEach(() => {
     unregisterServerAdapter("external_test");
+    unregisterServerAdapter("hermes_local");
+    unregisterServerAdapter("hermes_gateway");
     unregisterServerAdapter("claude_local");
     setOverridePaused("claude_local", false);
   });
 
   afterEach(() => {
     unregisterServerAdapter("external_test");
+    unregisterServerAdapter("hermes_local");
+    unregisterServerAdapter("hermes_gateway");
     unregisterServerAdapter("claude_local");
     setOverridePaused("claude_local", false);
   });
@@ -101,6 +105,88 @@ describe("server adapter registry", () => {
     expect(resolved.models).toEqual([
       { id: "plugin-model", label: "Plugin Override" },
     ]);
+  });
+
+  it("ships Hermes adapters as built-ins and still accepts external overrides", () => {
+    const builtInLocal = findServerAdapter("hermes_local");
+    const builtInGateway = findServerAdapter("hermes_gateway");
+
+    expect(builtInLocal).not.toBeNull();
+    expect(builtInLocal?.supportsLocalAgentJwt).toBe(true);
+    expect(builtInLocal?.supportsInstructionsBundle).toBe(true);
+    expect(builtInLocal?.requiresMaterializedRuntimeSkills).toBe(false);
+    expect(builtInLocal?.detectModel).toBeTypeOf("function");
+    expect(builtInLocal?.getConfigSchema).toBeTypeOf("function");
+
+    expect(builtInGateway).not.toBeNull();
+    expect(builtInGateway?.supportsLocalAgentJwt).toBe(false);
+    expect(builtInGateway?.supportsInstructionsBundle).toBe(false);
+    expect(builtInGateway?.requiresMaterializedRuntimeSkills).toBe(false);
+    expect(builtInGateway?.getConfigSchema).toBeTypeOf("function");
+
+    const hermesLocalExternalAdapter: ServerAdapterModule = {
+      type: "hermes_local",
+      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
+      testEnvironment: async () => ({
+        adapterType: "hermes_local",
+        status: "pass",
+        checks: [],
+        testedAt: new Date(0).toISOString(),
+      }),
+      supportsLocalAgentJwt: true,
+      supportsInstructionsBundle: true,
+      instructionsPathKey: "instructionsFilePath",
+      requiresMaterializedRuntimeSkills: false,
+      listSkills: async () => ({
+        adapterType: "hermes_local",
+        supported: true,
+        mode: "ephemeral",
+        desiredSkills: [],
+        entries: [],
+        warnings: [],
+      }),
+      getConfigSchema: () => ({ fields: [{ key: "provider", label: "Provider", type: "text" }] }),
+      detectModel: async () => ({
+        model: "hermes-model",
+        provider: "openrouter",
+        source: "test",
+      }),
+    };
+
+    const hermesGatewayExternalAdapter: ServerAdapterModule = {
+      type: "hermes_gateway",
+      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
+      testEnvironment: async () => ({
+        adapterType: "hermes_gateway",
+        status: "pass",
+        checks: [],
+        testedAt: new Date(0).toISOString(),
+      }),
+      supportsLocalAgentJwt: false,
+      supportsInstructionsBundle: false,
+      requiresMaterializedRuntimeSkills: false,
+      getConfigSchema: () => ({
+        fields: [{ key: "apiBaseUrl", label: "API URL", type: "text" }],
+      }),
+    };
+
+    registerServerAdapter(hermesLocalExternalAdapter);
+
+    expect(requireServerAdapter("hermes_local")).toBe(hermesLocalExternalAdapter);
+    expect(findActiveServerAdapter("hermes_local")?.supportsLocalAgentJwt).toBe(true);
+
+    unregisterServerAdapter("hermes_local");
+
+    expect(requireServerAdapter("hermes_local")).toBe(builtInLocal);
+
+    registerServerAdapter(hermesGatewayExternalAdapter);
+
+    expect(requireServerAdapter("hermes_gateway")).toBe(hermesGatewayExternalAdapter);
+    expect(findActiveServerAdapter("hermes_gateway")?.supportsLocalAgentJwt).toBe(false);
+
+    unregisterServerAdapter("hermes_gateway");
+
+    expect(requireServerAdapter("hermes_gateway")).toBe(builtInGateway);
   });
 
   it("exposes capability flags from registered adapters", () => {

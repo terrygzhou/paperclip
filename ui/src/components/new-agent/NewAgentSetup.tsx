@@ -124,13 +124,15 @@ function Setup({
   const multiProvider =
     brandType === "opencode_local" || brandType === "pi_local";
   const providerKeys = setupProviderKeys(brandType);
-  const chooseProvider = multiProvider;
+  const chooseProvider = multiProvider || brandType === "hermes_local";
   const hasCredentialField =
     chooseProvider || Boolean(SETUP_CREDENTIAL_KEYS[adapterType]);
   const showModel = ![
     "cursor_cloud",
+    "hermes_gateway",
     "dsh_local",
   ].includes(adapterType);
+  const [gatewayUrl, setGatewayUrl] = useState("");
   const [kimiModel, setKimiModel] = useState("");
   const [kimiBaseUrl, setKimiBaseUrl] = useState("");
   const [kimiProtocol, setKimiProtocol] = useState("kimi");
@@ -360,13 +362,16 @@ function Setup({
         ...(model ? { model } : {}),
       });
     if (!aiBinding && !nextConnection?.aiConnection && hasCredentialField && binding) {
-      config.env = { ...((config.env as object) ?? {}), [envKey]: binding };
+      if (adapterType === "hermes_gateway") config.apiKey = binding;
+      else
+        config.env = { ...((config.env as object) ?? {}), [envKey]: binding };
     }
     if (adapterType === "cursor_cloud")
       Object.assign(config, {
         repoUrl: repository.trim(),
         ...(branch.trim() ? { repoStartingRef: branch.trim() } : {}),
       });
+    if (adapterType === "hermes_gateway") config.apiBaseUrl = gatewayUrl.trim();
     if (usingKimiApi) {
       // --model overrides Kimi's environment-defined model. Let KIMI_MODEL_NAME win.
       delete config.model;
@@ -392,11 +397,23 @@ function Setup({
     )
       throw new Error("Enter a GitHub repository URL.");
     if (
-      adapterType === "cursor_cloud" &&
+      ["cursor_cloud", "hermes_gateway"].includes(adapterType) &&
       !apiKey.trim() &&
       !selectedBinding
     )
-      throw new Error("Enter a Cursor API key.");
+      throw new Error(
+        adapterType === "cursor_cloud"
+          ? "Enter a Cursor API key."
+          : `Enter ${envKey} or select an organization secret.`,
+      );
+    if (adapterType === "hermes_gateway") {
+      try {
+        const url = new URL(gatewayUrl.trim());
+        if (!["https:", "http:"].includes(url.protocol)) throw new Error();
+      } catch {
+        throw new Error("Enter the Hermes API base URL.");
+      }
+    }
     if (usingKimiApi && !kimiModel.trim())
       throw new Error("Enter the Kimi API model name.");
     return buildConfig(nextConnection);
@@ -476,8 +493,11 @@ function Setup({
           : storeOrganizationApiKey;
         const secret = await store(companyId, key, value);
         staged.push(secret);
-        config.env = {
-          ...((config.env as object) ?? {}),
+        if (adapterType === "hermes_gateway" && key === "API_SERVER_KEY")
+          config.apiKey = secret.binding;
+        else
+          config.env = {
+            ...((config.env as object) ?? {}),
             [key]: secret.binding,
           };
       }
@@ -599,7 +619,9 @@ function Setup({
   const environmentLabel =
     adapterType === "cursor_cloud"
       ? "Cursor Cloud"
-      : confirmationEnvironment
+      : adapterType === "hermes_gateway"
+        ? "Hermes Gateway"
+        : confirmationEnvironment
           ? environmentDisplayLabel(confirmationEnvironment)
           : "Local machine";
   const setupError =
@@ -941,6 +963,7 @@ function Setup({
                                         ? "Using saved key"
                                         : [
                                               "cursor_cloud",
+                                              "hermes_gateway",
                                             ].includes(adapterType)
                                           ? "Required"
                                           : "Optional if already configured"
@@ -995,6 +1018,19 @@ function Setup({
                               {multiProvider && ` Use a ${provider}/model ID.`}
                             </p>
                           </div>
+                        )}
+                        {adapterType === "hermes_gateway" && (
+                          <Field label="Hermes API base URL">
+                            <Input
+                              aria-label="Hermes API base URL"
+                              value={gatewayUrl}
+                              onChange={(event) => {
+                                setGatewayUrl(event.target.value);
+                                resetTest();
+                              }}
+                              placeholder="https://hermes.example.com"
+                            />
+                          </Field>
                         )}
                         {usingKimiApi && (
                           <div className="grid gap-5 sm:grid-cols-2">
@@ -1097,7 +1133,9 @@ function Setup({
                           </div>
                         )}
                       </section>
-                      {adapterType !== "cursor_cloud" && (
+                      {!["cursor_cloud", "hermes_gateway"].includes(
+                        adapterType,
+                      ) && (
                         <section className="space-y-5">
                           <h3 className="text-sm font-semibold">Environment</h3>
                           <select

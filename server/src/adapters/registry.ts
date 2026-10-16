@@ -96,6 +96,10 @@ import {
   models as kimiModels,
 } from "@paperclipai/adapter-kimi-local";
 import {
+  createHermesGatewayServerAdapter,
+  createHermesLocalServerAdapter,
+} from "@paperclipai/hermes-paperclip-adapter";
+import {
   execute as openCodeExecute,
   listOpenCodeSkills,
   syncOpenCodeSkills,
@@ -780,6 +784,16 @@ const kimiLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: kimiAgentConfigurationDoc,
 };
 
+const hermesGatewayAdapter: ServerAdapterModule = {
+  ...createHermesGatewayServerAdapter(),
+  runtimeToolDelivery: "invocation_context",
+};
+
+const hermesLocalAdapter: ServerAdapterModule = {
+  ...createHermesLocalServerAdapter(),
+  runtimeToolDelivery: "environment",
+};
+
 const openclawGatewayAdapter: ServerAdapterModule = {
   type: "openclaw_gateway",
   runtimeToolDelivery: "invocation_context",
@@ -926,6 +940,8 @@ function registerBuiltInAdapters() {
     geminiLocalAdapter,
     grokLocalAdapter,
     kimiLocalAdapter,
+    hermesGatewayAdapter,
+    hermesLocalAdapter,
     openclawGatewayAdapter,
     processAdapter,
     httpAdapter,

@@ -8,6 +8,7 @@ import { ClaudeLocalAdvancedFields } from "./claude-local/config-fields";
 import { GeminiLocalConfigFields } from "./gemini-local/config-fields";
 import { ProcessConfigFields } from "./process/config-fields";
 import { OpenClawGatewayConfigFields } from "./openclaw-gateway/config-fields";
+import { HermesGatewayConfigFields } from "./hermes-gateway/config-fields";
 
 function renderSection(
   Component: ComponentType<AdapterConfigFieldsProps>,
@@ -110,6 +111,7 @@ describe("adapter configuration sections", () => {
 
   it.each([
     ["openclaw_gateway", OpenClawGatewayConfigFields],
+    ["hermes_gateway", HermesGatewayConfigFields],
   ] as const)(
     "moves %s timeouts without changing their values",
     (type, Component) => {

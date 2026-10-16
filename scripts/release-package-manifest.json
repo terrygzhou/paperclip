@@ -35,6 +35,16 @@
     "publishFromCi": true
   },
   {
+    "dir": "packages/adapters/hermes",
+    "name": "@paperclipai/hermes-paperclip-adapter",
+    "publishFromCi": true
+  },
+  {
+    "dir": "packages/adapters/hermes-gateway",
+    "name": "@paperclipai/adapter-hermes-gateway",
+    "publishFromCi": false
+  },
+  {
     "dir": "packages/adapters/kimi-local",
     "name": "@paperclipai/adapter-kimi-local",
     "publishFromCi": true

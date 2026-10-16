@@ -167,7 +167,8 @@ beforeEach(() => {
     "codex_local",
     "opencode_local",
     "pi_local",
-    "paperclip_runner", "cursor_cloud", "cursor", "gemini_local", "kimi_local", "grok_local",   ].map((type) => ({ type, loaded: true, disabled: false }));
+    "paperclip_runner", "cursor_cloud", "cursor", "gemini_local", "kimi_local", "grok_local", "hermes_local", "hermes_gateway",
+  ].map((type) => ({ type, loaded: true, disabled: false }));
   api.adapterModels.mockResolvedValue([]);
   api.list.mockResolvedValue([{ id: "ceo", role: "ceo", status: "idle" }]);
   api.getAdapterAuthSignal.mockResolvedValue({ status: "present" });
@@ -302,6 +303,7 @@ describe("New agent setup", () => {
   it.each([
     ["cursor", "CURSOR_API_KEY"],
     ["gemini_local", "GEMINI_API_KEY"],
+    ["hermes_local", "OPENROUTER_API_KEY"],
   ])("provides %s credentials to tests and stores only a secret reference", async (adapter, key) => {
     await render(adapter);
     await fill(key, "adapter-test-key");
@@ -326,6 +328,19 @@ describe("New agent setup", () => {
       KIMI_MODEL_BASE_URL: { type: "plain", value: "https://api.kimi.com/coding/v1" },
       KIMI_MODEL_API_KEY: { type: "secret_ref", secretId: "org-secret-1" },
     });
+  });
+  it("configures Hermes Gateway URL and its top-level secret reference", async () => {
+    await render("hermes_gateway");
+    expect(container.querySelector('[aria-label="Model"]')).toBeNull();
+    await fill("Hermes API base URL", "https://hermes.example.com");
+    await fill("API_SERVER_KEY", "hermes-test-key");
+    await click("Finish setup");
+    expect(api.testEnvironment.mock.calls[0][2]).toMatchObject({
+      adapterConfig: { apiBaseUrl: "https://hermes.example.com" },
+      testCredentials: { API_SERVER_KEY: "hermes-test-key" },
+    });
+    expect(api.hire.mock.calls[0][1].adapterConfig.apiKey).toMatchObject({ type: "secret_ref", secretId: "org-secret-1" });
+    expect(JSON.stringify(api.hire.mock.calls)).not.toContain("hermes-test-key");
   });
   it("uses the shared Grok connection flow and hides ignored Kimi and OpenCode effort controls", async () => {
     await render("grok_local");
