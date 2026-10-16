@@ -3547,11 +3547,6 @@ export function agentRoutes(
             ...effectiveAdapterConfig,
             env: { ...parseObject(effectiveAdapterConfig.env), ...req.body.testCredentials },
           };
-          // Hermes authenticates the gateway itself through a top-level field.
-          // Keep its draft key out of persistence normalization, like env keys.
-          if (type === "hermes_gateway" && req.body.testCredentials.API_SERVER_KEY) {
-            effectiveAdapterConfig.apiKey = req.body.testCredentials.API_SERVER_KEY;
-          }
         }
         const managed = aiBinding ? await prepareManagedAiRuntime(db, { companyId, agentId: req.body.agentId ?? "", responsibleUserId: responsibleUserForAiRequest(req), adapterType: type, binding: aiBinding, config: effectiveAdapterConfig, allowUninstalledPersonal: !req.body.agentId, allowUninstalledShared: !req.body.agentId && await canInstallSharedAiConnectionForNewAgent(db, req, companyId, aiBinding) }) : null;
         let result;

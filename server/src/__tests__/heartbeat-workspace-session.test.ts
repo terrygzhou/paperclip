@@ -188,30 +188,6 @@ function buildAgent(adapterType: string, runtimeConfig: Record<string, unknown> 
   } as unknown as typeof agents.$inferSelect;
 }
 
-const hermesSessionCodec = {
-  deserialize(raw: unknown) {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-    const record = raw as Record<string, unknown>;
-    const sessionId = typeof record.sessionId === "string" && record.sessionId.trim() ? record.sessionId.trim() : null;
-    return sessionId ? { sessionId } : null;
-  },
-  serialize(params: Record<string, unknown> | null) {
-    if (!params) return null;
-    const sessionId = typeof params.sessionId === "string" && params.sessionId.trim() ? params.sessionId.trim() : null;
-    return sessionId ? { sessionId } : null;
-  },
-  getDisplayId(params: Record<string, unknown> | null) {
-    return typeof params?.sessionId === "string" && params.sessionId.trim() ? params.sessionId.trim() : null;
-  },
-};
-
-const truncatingHermesSessionCodec = {
-  ...hermesSessionCodec,
-  getDisplayId(params: Record<string, unknown> | null) {
-    const sessionId = hermesSessionCodec.getDisplayId(params);
-    return sessionId ? sessionId.slice(0, 16) : null;
-  },
-};
 
 function lowTrustResolution(): TrustPresetResolution {
   return {
@@ -2793,28 +2769,9 @@ describe("buildExplicitResumeSessionOverride", () => {
     });
   });
 
-  it("does not synthesize Hermes resume params from a truncated display id", () => {
+  it("uses validated run result params before truncated display ids", () => {
     const result = buildExplicitResumeSessionOverride({
-      adapterType: "hermes_local",
-      resumeFromRunId: "run-1",
-      resumeRunSessionIdBefore: null,
-      resumeRunSessionIdAfter: "20260601_141558_",
-      taskSession: {
-        sessionParamsJson: {
-          sessionId: "20260601_141000_c861e4",
-        },
-        sessionDisplayId: "20260601_141000_",
-        lastRunId: "run-2",
-      },
-      sessionCodec: truncatingHermesSessionCodec,
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it("uses validated Hermes run result params before truncated display ids", () => {
-    const result = buildExplicitResumeSessionOverride({
-      adapterType: "hermes_local",
+      adapterType: "codex_local",
       resumeFromRunId: "run-1",
       resumeRunSessionIdBefore: null,
       resumeRunSessionIdAfter: "20260601_141558_",
@@ -2822,7 +2779,7 @@ describe("buildExplicitResumeSessionOverride", () => {
         sessionId: "20260601_141558_c861e4",
       },
       taskSession: null,
-      sessionCodec: truncatingHermesSessionCodec,
+      sessionCodec: codexSessionCodec,
     });
 
     expect(result).toEqual({
@@ -2833,9 +2790,9 @@ describe("buildExplicitResumeSessionOverride", () => {
     });
   });
 
-  it("keeps Hermes run result params and display id together when falling back from a prior session", () => {
+  it("keeps run result params and display id together when falling back from a prior session", () => {
     const result = buildExplicitResumeSessionOverride({
-      adapterType: "hermes_local",
+      adapterType: "codex_local",
       resumeFromRunId: "run-1",
       resumeRunSessionIdBefore: "20260601_140000_old123",
       resumeRunSessionIdAfter: "20260601_141558_",
@@ -2843,65 +2800,7 @@ describe("buildExplicitResumeSessionOverride", () => {
         sessionId: "20260601_141558_c861e4",
       },
       taskSession: null,
-      sessionCodec: truncatingHermesSessionCodec,
-    });
-
-    expect(result).toEqual({
-      sessionDisplayId: "20260601_141558_c861e4",
-      sessionParams: {
-        sessionId: "20260601_141558_c861e4",
-      },
-    });
-  });
-
-  it("ignores invalid Hermes run result params", () => {
-    const result = buildExplicitResumeSessionOverride({
-      adapterType: "hermes_local",
-      resumeFromRunId: "run-1",
-      resumeRunSessionIdBefore: null,
-      resumeRunSessionIdAfter: "20260601_141558_",
-      resumeRunSessionParams: {
-        sessionId: "from",
-      },
-      taskSession: null,
-      sessionCodec: truncatingHermesSessionCodec,
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it("keeps full Hermes task-session params even when the saved display id is truncated", () => {
-    const result = buildExplicitResumeSessionOverride({
-      adapterType: "hermes_local",
-      resumeFromRunId: "run-1",
-      resumeRunSessionIdBefore: null,
-      resumeRunSessionIdAfter: "20260601_141558_",
-      taskSession: {
-        sessionParamsJson: {
-          sessionId: "20260601_141558_c861e4",
-        },
-        sessionDisplayId: "20260601_141558_",
-        lastRunId: "run-1",
-      },
-      sessionCodec: truncatingHermesSessionCodec,
-    });
-
-    expect(result).toEqual({
-      sessionDisplayId: "20260601_141558_c861e4",
-      sessionParams: {
-        sessionId: "20260601_141558_c861e4",
-      },
-    });
-  });
-
-  it("falls back from a poisoned Hermes session-after value to a valid session-before value", () => {
-    const result = buildExplicitResumeSessionOverride({
-      adapterType: "hermes_local",
-      resumeFromRunId: "run-1",
-      resumeRunSessionIdBefore: "20260601_141558_c861e4",
-      resumeRunSessionIdAfter: "from",
-      taskSession: null,
-      sessionCodec: hermesSessionCodec,
+      sessionCodec: codexSessionCodec,
     });
 
     expect(result).toEqual({
@@ -2914,125 +2813,8 @@ describe("buildExplicitResumeSessionOverride", () => {
 });
 
 describe("resolveNextSessionState", () => {
-  it("preserves previous valid Hermes session state when failed adapter output reports prose tokens", () => {
-    const result = resolveNextSessionState({
-      adapterType: "hermes_local",
-      codec: truncatingHermesSessionCodec,
-      adapterResult: {
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        sessionParams: {
-          sessionId: "from",
-        },
-        sessionId: "from",
-        sessionDisplayId: "from",
-        errorMessage: "Session not found: 20260601_141558_",
-      },
-      outcome: "failed",
-      previousParams: {
-        sessionId: "20260601_141558_c861e4",
-      },
-      previousDisplayId: "20260601_141558_c861e4",
-      previousLegacySessionId: "20260601_141558_c861e4",
-    });
 
-    expect(result).toEqual({
-      params: {
-        sessionId: "20260601_141558_c861e4",
-      },
-      displayId: "20260601_141558_c861e4",
-      legacySessionId: "20260601_141558_c861e4",
-    });
-  });
-
-  it("drops poisoned previous Hermes session state instead of passing it to the next run", () => {
-    const result = resolveNextSessionState({
-      adapterType: "hermes_local",
-      codec: truncatingHermesSessionCodec,
-      adapterResult: {
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        sessionId: "from",
-        sessionDisplayId: "from",
-        errorMessage: "Session not found: from",
-      },
-      outcome: "failed",
-      previousParams: {
-        sessionId: "from",
-      },
-      previousDisplayId: "from",
-      previousLegacySessionId: "from",
-    });
-
-    expect(result).toEqual({
-      params: null,
-      displayId: null,
-      legacySessionId: null,
-    });
-  });
-
-  it("derives Hermes display state from canonical params instead of adapter-truncated display ids", () => {
-    const result = resolveNextSessionState({
-      adapterType: "hermes_local",
-      codec: truncatingHermesSessionCodec,
-      adapterResult: {
-        exitCode: 0,
-        signal: null,
-        timedOut: false,
-        sessionParams: {
-          sessionId: "20260601_141558_c861e4",
-        },
-        sessionDisplayId: "20260601_141558_",
-      },
-      outcome: "succeeded",
-      previousParams: null,
-      previousDisplayId: null,
-      previousLegacySessionId: null,
-    });
-
-    expect(result).toEqual({
-      params: {
-        sessionId: "20260601_141558_c861e4",
-      },
-      displayId: "20260601_141558_c861e4",
-      legacySessionId: "20260601_141558_c861e4",
-    });
-  });
-
-  it("uses one canonical Hermes explicit session candidate instead of mixing valid and invalid fields", () => {
-    const result = resolveNextSessionState({
-      adapterType: "hermes_local",
-      codec: truncatingHermesSessionCodec,
-      adapterResult: {
-        exitCode: 0,
-        signal: null,
-        timedOut: false,
-        sessionParams: {
-          sessionId: "from",
-        },
-        sessionId: "20260601_141558_c861e4",
-        sessionDisplayId: "20260601_141558_",
-      },
-      outcome: "succeeded",
-      previousParams: {
-        sessionId: "20260601_140000_previous",
-      },
-      previousDisplayId: "20260601_140000_previous",
-      previousLegacySessionId: "20260601_140000_previous",
-    });
-
-    expect(result).toEqual({
-      params: {
-        sessionId: "20260601_141558_c861e4",
-      },
-      displayId: "20260601_141558_c861e4",
-      legacySessionId: "20260601_141558_c861e4",
-    });
-  });
-
-  it("keeps non-Hermes arbitrary session ids unchanged", () => {
+  it("keeps arbitrary session ids unchanged", () => {
     const result = resolveNextSessionState({
       adapterType: "codex_local",
       codec: codexSessionCodec,

@@ -8,7 +8,6 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "codex_local",
   "cursor",
   "gemini_local",
-  "hermes_local",
   "kimi_local",
   "opencode_local",
   "pi_local",

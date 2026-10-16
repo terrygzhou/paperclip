@@ -101,17 +101,6 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
     description: "Kimi Code CLI harness",
     icon: Moon,
   },
-  hermes_gateway: {
-    label: "Hermes Gateway",
-    description: "Remote Hermes API server",
-    icon: Bot,
-    hideFromVisualSelection: true,
-  },
-  hermes_local: {
-    label: "Hermes",
-    description: "Hermes harness",
-    icon: Bot,
-  },
   opencode_local: {
     label: "OpenCode",
     description: "OpenCode multi-provider harness",

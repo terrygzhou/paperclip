@@ -23,8 +23,6 @@ const directBuiltInAdapterTypes = [
   "cursor",
   "gemini_local",
   "grok_local",
-  "hermes_gateway",
-  "hermes_local",
   "kimi_local",
   "openclaw_gateway",
   "opencode_local",

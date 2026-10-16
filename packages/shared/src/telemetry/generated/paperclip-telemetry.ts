@@ -11,7 +11,7 @@ agent_role: ("ceo" | "cto" | "cmo" | "cfo" | "security" | "engineer" | "designer
 }
 
 export interface PaperclipAgentTaskCompletedDimensions {
-adapter_type: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "hermes_gateway" | "hermes_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
+adapter_type: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
 agent_id: string
 agent_role: ("ceo" | "cto" | "cmo" | "cfo" | "security" | "engineer" | "designer" | "pm" | "qa" | "devops" | "researcher" | "general" | "other")
 model?: string
@@ -19,7 +19,7 @@ task_id?: string
 }
 
 export interface PaperclipAgentTaskRunDimensions {
-adapter_type?: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "hermes_gateway" | "hermes_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
+adapter_type?: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
 agent_id: string
 agent_role?: ("ceo" | "cto" | "cmo" | "cfo" | "security" | "engineer" | "designer" | "pm" | "qa" | "devops" | "researcher" | "general" | "other")
 model?: string
@@ -46,7 +46,7 @@ goal_level: ("company" | "team" | "agent" | "task" | "other")
 }
 
 export interface PaperclipInstallCompletedDimensions {
-adapter_type: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "hermes_gateway" | "hermes_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
+adapter_type: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
 }
 
 export interface PaperclipInstallStartedDimensions {
@@ -196,8 +196,6 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "codex_local": "Agent runtime uses the local Codex adapter.",
       "cursor_cloud": "Agent runtime uses the Cursor cloud adapter.",
       "gemini_local": "Agent runtime uses the local Gemini adapter.",
-      "hermes_gateway": "Agent runtime uses the Hermes gateway adapter.",
-      "hermes_local": "Agent runtime uses the local Hermes adapter.",
       "opencode_local": "Agent runtime uses the local OpenCode adapter.",
       "pi_local": "Agent runtime uses the local Pi adapter.",
       "cursor": "Agent runtime uses the Cursor adapter.",
@@ -231,8 +229,6 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "codex_local": "Agent runtime uses the local Codex adapter.",
       "cursor_cloud": "Agent runtime uses the Cursor cloud adapter.",
       "gemini_local": "Agent runtime uses the local Gemini adapter.",
-      "hermes_gateway": "Agent runtime uses the Hermes gateway adapter.",
-      "hermes_local": "Agent runtime uses the local Hermes adapter.",
       "opencode_local": "Agent runtime uses the local OpenCode adapter.",
       "pi_local": "Agent runtime uses the local Pi adapter.",
       "cursor": "Agent runtime uses the Cursor adapter.",
@@ -292,8 +288,6 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "codex_local": "Agent runtime uses the local Codex adapter.",
       "cursor_cloud": "Agent runtime uses the Cursor cloud adapter.",
       "gemini_local": "Agent runtime uses the local Gemini adapter.",
-      "hermes_gateway": "Agent runtime uses the Hermes gateway adapter.",
-      "hermes_local": "Agent runtime uses the local Hermes adapter.",
       "opencode_local": "Agent runtime uses the local OpenCode adapter.",
       "pi_local": "Agent runtime uses the local Pi adapter.",
       "cursor": "Agent runtime uses the Cursor adapter.",

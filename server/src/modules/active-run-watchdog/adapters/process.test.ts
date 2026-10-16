@@ -27,12 +27,12 @@ describe("adapters", () => {
 
       const outcome = await adapter.cleanupRunProcess({
         runId: "run-1",
-        adapterType: "hermes_gateway",
+        adapterType: "openclaw_gateway",
         fallbackPid: 4242,
         fallbackProcessGroupId: null,
       });
 
-      expect(outcome).toEqual({ attempted: false, outcome: "skipped_non_local_adapter", adapterType: "hermes_gateway" });
+      expect(outcome).toEqual({ attempted: false, outcome: "skipped_non_local_adapter", adapterType: "openclaw_gateway" });
       expect(mockedIsPidAlive).not.toHaveBeenCalled();
     });
 

@@ -1159,7 +1159,7 @@ describeEmbeddedPostgres("secretService", () => {
     const normalizeCall = svc.normalizeAdapterConfigForPersistence(
       companyId,
       { apiKey: accountHomeDir },
-      { adapterType: "hermes_gateway" },
+      { adapterType: "openclaw_gateway" },
     );
     // The queued create must stay blocked behind the held lock.
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1180,7 +1180,7 @@ describeEmbeddedPostgres("secretService", () => {
     const normalized = await svc.normalizeAdapterConfigForPersistence(
       companyId,
       { apiKey: `plain-api-key-${randomUUID()}` },
-      { adapterType: "hermes_gateway" },
+      { adapterType: "openclaw_gateway" },
     );
     const apiKeyBinding = (normalized as Record<string, unknown>).apiKey as { type: string; secretId: string };
     expect(apiKeyBinding.type).toBe("secret_ref");
@@ -1939,7 +1939,7 @@ describeEmbeddedPostgres("secretService", () => {
     };
 
     await expect(
-      svc.resolveAdapterConfigForRuntime(companyId, adapterConfig, undefined, { adapterType: "hermes_gateway" }),
+      svc.resolveAdapterConfigForRuntime(companyId, adapterConfig, undefined, { adapterType: "openclaw_gateway" }),
     ).rejects.toMatchObject({
       status: 422,
       details: { code: "responsible_user_missing" },
@@ -1949,7 +1949,7 @@ describeEmbeddedPostgres("secretService", () => {
       companyId,
       adapterConfig,
       undefined,
-      { adapterType: "hermes_gateway", skipUserSecrets: true },
+      { adapterType: "openclaw_gateway", skipUserSecrets: true },
     );
 
     expect(resolved.config).not.toHaveProperty("apiKey");
@@ -2342,20 +2342,20 @@ describeEmbeddedPostgres("secretService", () => {
     await seedCompanyMember(companyId, "user-1", "owner");
     const svc = secretService(db);
     const definition = await svc.createUserSecretDefinition(companyId, {
-      key: "hermes_api_key",
-      name: "Hermes API key",
+      key: "gateway_api_key",
+      name: "Gateway API key",
       provider: "local_encrypted",
     });
     const adapterConfig = {
       apiBaseUrl: "http://127.0.0.1:9119/api",
-      apiKey: { type: "user_secret_ref" as const, key: "hermes_api_key", version: "latest" as const },
+      apiKey: { type: "user_secret_ref" as const, key: "gateway_api_key", version: "latest" as const },
     };
     await svc.syncUserSecretDeclarationsForTarget(companyId, {
       targetType: "agent",
       targetId: "agent-1",
     }, [
       {
-        definitionKey: "hermes_api_key",
+        definitionKey: "gateway_api_key",
         configPath: "apiKey",
         envKey: "apiKey",
       },
@@ -2365,7 +2365,7 @@ describeEmbeddedPostgres("secretService", () => {
       svc.collectMissingAdapterConfigRuntimeBindings(
         companyId,
         adapterConfig,
-        "hermes_gateway",
+        "openclaw_gateway",
         {
           consumerType: "agent",
           consumerId: "agent-1",
@@ -2378,7 +2378,7 @@ describeEmbeddedPostgres("secretService", () => {
         configPath: "apiKey",
         envKey: "apiKey",
         userSecretDefinitionId: definition.id,
-        userSecretDefinitionKey: "hermes_api_key",
+        userSecretDefinitionKey: "gateway_api_key",
         responsibleUserId: "user-1",
         errorCode: "user_secret_missing",
       }),
@@ -2391,12 +2391,12 @@ describeEmbeddedPostgres("secretService", () => {
           ...adapterConfig,
           apiKey: {
             type: "user_secret_ref" as const,
-            key: "hermes_api_key",
+            key: "gateway_api_key",
             version: "latest" as const,
             required: false,
           },
         },
-        "hermes_gateway",
+        "openclaw_gateway",
         {
           consumerType: "agent",
           consumerId: "agent-1",
@@ -2413,7 +2413,7 @@ describeEmbeddedPostgres("secretService", () => {
       svc.collectMissingAdapterConfigRuntimeBindings(
         companyId,
         adapterConfig,
-        "hermes_gateway",
+        "openclaw_gateway",
         {
           consumerType: "agent",
           consumerId: "agent-1",
@@ -2426,8 +2426,8 @@ describeEmbeddedPostgres("secretService", () => {
         configPath: "apiKey",
         envKey: "apiKey",
         userSecretDefinitionId: definition.id,
-        userSecretDefinitionKey: "hermes_api_key",
-        userSecretDefinitionName: "Hermes API key",
+        userSecretDefinitionKey: "gateway_api_key",
+        userSecretDefinitionName: "Gateway API key",
         responsibleUserId: "user-1",
         errorCode: "user_secret_definition_inactive",
       }),

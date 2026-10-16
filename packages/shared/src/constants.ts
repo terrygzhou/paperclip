@@ -34,8 +34,6 @@ export const AGENT_ADAPTER_TYPES = [
   "cursor_cloud",
   "gemini_local",
   "grok_local",
-  "hermes_gateway",
-  "hermes_local",
   "kimi_local",
   "opencode_local",
   "pi_local",

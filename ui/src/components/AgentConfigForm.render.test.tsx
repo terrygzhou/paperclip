@@ -99,7 +99,7 @@ vi.mock("../context/CompanyContext", () => ({
 vi.mock("../adapters", () => ({
   getUIAdapter: (type: string) => ({
     type,
-    label: type === "hermes_gateway" ? "Hermes Gateway" : "Codex",
+    label: "Codex",
     // The stand-in also records the two gates the form resolves for every
     // adapter, so a test can assert the plumbing without rendering a real
     // adapter's fields.
@@ -108,9 +108,7 @@ vi.mock("../adapters", () => ({
       hideInstructionsFile?: boolean;
       managedSandboxOnly?: boolean;
     }) =>
-      adapterType === "hermes_gateway"
-        ? <div data-testid="hermes-gateway-config-fields">Hermes Gateway fields</div>
-        : (
+      (
           <div
             data-testid="adapter-config-fields"
             data-hide-instructions-file={String(hideInstructionsFile === true)}
@@ -146,22 +144,14 @@ const mockLoginProjections = vi.hoisted(
 vi.mock("../adapters/use-adapter-capabilities", () => ({
   useAdapterCapabilities: () => (adapterType: string) => {
     const login = mockLoginProjections.get(adapterType);
-    return adapterType === "hermes_gateway"
-      ? {
-          supportsInstructionsBundle: false,
-          supportsSkills: false,
-          supportsLocalAgentJwt: false,
-          requiresMaterializedRuntimeSkills: false,
-          supportsAcp: false,
-        }
-      : {
-          supportsInstructionsBundle: true,
-          supportsSkills: true,
-          supportsLocalAgentJwt: true,
-          requiresMaterializedRuntimeSkills: false,
-          supportsAcp: true,
-          ...(login ? { login } : {}),
-        };
+    return {
+      supportsInstructionsBundle: true,
+      supportsSkills: true,
+      supportsLocalAgentJwt: true,
+      requiresMaterializedRuntimeSkills: false,
+      supportsAcp: true,
+      ...(login ? { login } : {}),
+    };
   },
 }));
 
@@ -1034,22 +1024,6 @@ describe("AgentConfigForm environment selector", () => {
     expect(selector?.textContent).not.toContain("· sandbox");
   });
 
-  it("renders non-local adapter config fields in the Adapter card", async () => {
-    const result = await renderForm(
-      [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })],
-      {
-        adapterType: "hermes_gateway",
-        adapterConfig: {
-          apiBaseUrl: "http://127.0.0.1:8642",
-          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111111" },
-        },
-      },
-    );
-    roots.push(result.root);
-
-    expect(result.container.querySelector('[data-testid="hermes-gateway-config-fields"]')).toBeTruthy();
-    expect(result.container.textContent).toContain("Hermes Gateway fields");
-  });
 
   it("tests a Codex agent after clearing the primary model to the adapter default", async () => {
     const result = await renderForm([
