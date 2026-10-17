@@ -86,9 +86,12 @@ export const authVerifications = pgTable("verification", {
  * generates a base62 string id in JS on every create and injects it before the
  * insert, same as `authUsers` / `authVerifications`.
  *
- * `secret` and `backupCodes` are encrypted at write time (symmetricEncrypt
- * keyed off the app secret) — they are never returned to the client
- * (`returned: false` in the plugin schema).
+ * `secret` is encrypted at write time (symmetricEncrypt keyed off the app
+ * secret). `backupCodes` are stored encrypted because
+ * `server/src/auth/better-auth.ts` configures the plugin with
+ * `backupCodeOptions: { storeBackupCodes: "encrypted" }`; without that
+ * option the plugin writes them in plaintext. Neither value is ever
+ * returned to the client (`returned: false` in the plugin schema).
  */
 export const twoFactor = pgTable(
   "two_factor",

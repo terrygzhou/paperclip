@@ -107,8 +107,6 @@ export function TwoFactorSettings({
     }
   }
 
-  const isPending = enableMutation.isPending || verifyEnrollMutation.isPending || disableMutation.isPending;
-
   return (
     <Card className="p-5">
       <div className="flex items-center gap-2 mb-1">
@@ -177,7 +175,7 @@ export function TwoFactorSettings({
       {state === "enroll" && (
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="2faEnrollPassword">Password</Label>
+            <Label htmlFor="enroll2faPassword">Password</Label>
             <Input
               id="enroll2faPassword"
               type="password"
@@ -286,7 +284,7 @@ export function TwoFactorSettings({
 
           {/* TOTP verify input */}
           <div className="space-y-1.5">
-            <Label htmlFor="2faVerifyCode">Confirm with a code</Label>
+            <Label htmlFor="verify2faCode">Confirm with a code</Label>
             <div className="flex gap-2">
               <Input
                 id="verify2faCode"
@@ -324,7 +322,7 @@ export function TwoFactorSettings({
       {state === "disable" && (
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="2faDisablePassword">Password</Label>
+            <Label htmlFor="disable2faPassword">Password</Label>
             <Input
               id="disable2faPassword"
               type="password"

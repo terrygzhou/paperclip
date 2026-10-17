@@ -252,8 +252,14 @@ export function resolveWorkspaceHandoffIdentity(
  *   expose the exchange at all.
  */
 function buildBetterAuthPlugins(db: Db, config: Config) {
+  // "encrypted" (top-level) keeps one-time backup codes (a DB leak must not
+  // be an MFA bypass) encrypted at rest under the Better Auth secret. The
+  // plugin's backup-code path does NOT inherit that default — it resolves
+  // from `backupCodeOptions` only — so pass it explicitly. The TOTP secret
+  // is always encrypted by the plugin.
   const twoFactorPlugin = twoFactor({
     issuer: "Paperclip",
+    backupCodeOptions: { storeBackupCodes: "encrypted" },
   });
   const handoffIdentity = resolveWorkspaceHandoffIdentity(config);
   if (!handoffIdentity) {
