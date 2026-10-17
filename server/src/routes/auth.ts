@@ -91,6 +91,7 @@ export function authRoutes(db: Db) {
         email: authUsers.email,
         name: authUsers.name,
         image: authUsers.image,
+        twoFactorEnabled: authUsers.twoFactorEnabled,
       })
       .then((rows) => rows[0] ?? null);
 
@@ -103,6 +104,7 @@ export function authRoutes(db: Db) {
       email: updated.email ?? null,
       name: updated.name ?? null,
       image: updated.image ?? null,
+      twoFactorEnabled: updated.twoFactorEnabled,
     }));
   });
 
