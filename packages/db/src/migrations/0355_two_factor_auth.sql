@@ -20,4 +20,3 @@ ALTER TABLE "two_factor" ADD CONSTRAINT "two_factor_user_id_user_id_fk" FOREIGN 
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "two_factor_user_id_idx" ON "two_factor" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "two_factor_secret_idx" ON "two_factor" USING btree ("secret");

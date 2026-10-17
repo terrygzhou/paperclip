@@ -106,6 +106,5 @@ export const twoFactor = pgTable(
   },
   (table) => ({
     userIdIdx: index("two_factor_user_id_idx").on(table.userId),
-    secretIdx: index("two_factor_secret_idx").on(table.secret),
   }),
 );
