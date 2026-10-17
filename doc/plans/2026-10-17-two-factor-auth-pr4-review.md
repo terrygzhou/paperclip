@@ -129,3 +129,30 @@ Notes on the fix commit:
 - Note: this fork's GitHub API surface is partially degraded (jobs-list
   intermittently returns 30/48 entries, single-job/check-run/log GETs return
   404); use `per_page=100` polling and the jobs-list endpoint when re-checking.
+
+---
+
+## CI lane root-cause verification (2026-10-17, reviewer-side)
+
+The "suspected pre-existing flakes" claim holds for only **2 of the 4** failing lanes. Job-log evidence from run 38999796258 @ `29e8b1a4e`:
+
+| Lane | Failing test | Root cause | Classification |
+|---|---|---|---|
+| `workspaces-c` | `@paperclipai/db` `src/migration-snapshot-drift.test.ts` ("keeps the newest snapshot in sync with the drizzle schema") | Branch adds migration `0355_two_factor_auth` + `two_factor` schema, but the diff only updates `meta/_journal.json` — `meta/0355_snapshot.json` was never committed | **Branch regression**: run `pnpm db:generate` (compiles `packages/db` first) and commit the regenerated snapshot |
+| `e2e shard (8/8)` | `tests/e2e/cloud-auth.spec.ts` "Cloud recovery preserves the task" (4/4) | Cloud is **mocked at the HTTP edge** (`page.route` on health/get-session/entry-redirect — no real network); spec unchanged from master and exercises the cloud path this branch modified; still failing after the restore | **Branch-related**: run the spec locally on master vs `29e8b1a4e` to find the restore gap |
+| `workspaces-a (1/2)` | `CloudAccessGate.test.tsx` (15/17) | No file of it in the branch diff; also fails on local master | Pre-existing/env ✓ |
+| `workspaces-a (2/2)` | `src/api/response.test.ts` (4/24) | Not in the branch diff | Pre-existing/env ✓ |
+
+All four code fixes verified at `29e8b1a4e`: cloud restore + tests, `backupCodeOptions` option shape valid in 1.7.2, lockfile reverted, a11y `htmlFor`, dead `isPending`, schema comment.
+
+Claim corrections:
+- "pre-existing flake" is unsupported for `workspaces-c` and `e2e-8` (see table); only the `workspaces-a` lanes qualify.
+- GraphQL `maintainerCanModify` is **`false`**, not null (`mergeable: MERGEABLE`, `mergeStateStatus: UNSTABLE`).
+- PR body has **three** unchecked boxes, not two (CI green / review gate / reviewer-comments addressed).
+
+Updated remaining work:
+1. Commit `meta/0355_snapshot.json` (`pnpm db:generate`) → clears `workspaces-c`.
+2. Local master-vs-branch `cloud-auth.spec.ts` isolation → find the restore gap or clear the flake suspicion → clears `e2e 8/8`.
+3. Enable the fork's dependency graph (owner action).
+4. Re-run and check the three boxes.
+
