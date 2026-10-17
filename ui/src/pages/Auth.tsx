@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
-import { authApi } from "../api/auth";
+import { authApi, type SignWithEmailResult } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
 import { getRememberedInvitePath } from "../lib/invite-memory";
 import { Button } from "@/components/ui/button";
 import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
 import { PaperclipLoading } from "@/components/AnimatedPaperclipIcon";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Sparkles } from "lucide-react";
+import { PaperclipLockup } from "../components/PaperclipLockup";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -21,6 +21,10 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Two-factor step: set when sign-in returns a twoFactorRedirect challenge.
+  const [twoFactorStep, setTwoFactorStep] = useState<SignWithEmailResult | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [useBackupCode, setUseBackupCode] = useState(false);
   const errorId = "auth-error";
 
   const nextPath = useMemo(
@@ -40,26 +44,66 @@ export function AuthPage() {
   }, [session, navigate, nextPath]);
 
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<SignWithEmailResult | null> => {
       if (mode === "sign_in") {
-        await authApi.signInEmail({ email: email.trim(), password });
-        return;
+        const result = await authApi.signInEmail({ email: email.trim(), password });
+        // A twoFactorRedirect means no session was issued: stop at the TOTP step.
+        setTwoFactorStep(result.twoFactorRedirect ? result : null);
+        setTotpCode("");
+        setUseBackupCode(false);
+        return result;
       }
       await authApi.signUpEmail({
         name: name.trim(),
         email: email.trim(),
         password,
       });
+      return null;
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setError(null);
+      // A two-factor challenge defers completion to the TOTP/backup-code
+      // mutations; only the password-only path (no twoFactorRedirect) continues here.
+      if (result?.twoFactorRedirect) return;
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
       await queryClient.invalidateQueries({ queryKey: queryKeys.health });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      // Reset rather than invalidate: the `["companies"]` entry is shared app-wide and
+      // is not account-scoped, so invalidating leaves the previous account's list
+      // readable (and any fetch for that session in flight) until the refetch lands.
+      // Sign-in can change accounts, so drop the list outright.
+      await queryClient.resetQueries({ queryKey: queryKeys.companies.all });
       navigate(nextPath, { replace: true });
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : "Authentication failed");
+    },
+  });
+
+  const completeTwoFactor = async () => {
+    setError(null);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.health });
+    // Reset rather than invalidate: the `["companies"]` entry is shared app-wide and
+    // is not account-scoped, so invalidating leaves the previous account's list
+    // readable (and any fetch for that session in flight) until the refetch lands.
+    // Sign-in can change accounts, so drop the list outright.
+    await queryClient.resetQueries({ queryKey: queryKeys.companies.all });
+    navigate(nextPath, { replace: true });
+  };
+
+  const verifyTotpMutation = useMutation({
+    mutationFn: () => authApi.verifyTotp(totpCode.trim()),
+    onSuccess: completeTwoFactor,
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    },
+  });
+
+  const verifyBackupCodeMutation = useMutation({
+    mutationFn: () => authApi.verifyBackupCode(totpCode.trim()),
+    onSuccess: completeTwoFactor,
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Verification failed");
     },
   });
 
@@ -84,20 +128,84 @@ export function AuthPage() {
       {/* Left half — form */}
       <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
         <div className="w-full max-w-md mx-auto my-auto px-8 py-12">
-          <div className="flex items-center gap-2 mb-8">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Paperclip</span>
+          <div className="mb-8">
+            <PaperclipLockup className="h-5 w-auto" />
           </div>
 
           <h1 className="text-xl font-semibold">
-            {mode === "sign_in" ? "Sign in to Paperclip" : "Create your Paperclip account"}
+            {twoFactorStep
+              ? "Two-factor verification"
+              : mode === "sign_in"
+                ? "Sign in to Paperclip"
+                : "Create your Paperclip account"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {mode === "sign_in"
-              ? "Use your email and password to access this instance."
-              : "Create an account for this instance. Email confirmation is not required in v1."}
+            {twoFactorStep
+              ? "Enter the code from your authenticator app, or use a one-time backup code."
+              : mode === "sign_in"
+                ? "Use your email and password to access this instance."
+                : "Create an account for this instance. Email confirmation is not required in v1."}
           </p>
 
+          {twoFactorStep ? (
+            <form
+              className="mt-6 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (verifyTotpMutation.isPending || verifyBackupCodeMutation.isPending) return;
+                const code = totpCode.trim();
+                if (code.length === 0) {
+                  setError("Enter a code to continue.");
+                  return;
+                }
+                (useBackupCode ? verifyBackupCodeMutation : verifyTotpMutation).mutate();
+              }}
+            >
+              <div>
+                <label htmlFor="two-factor-code" className="text-xs text-muted-foreground mb-1 block">
+                  {useBackupCode ? "Backup code" : "6-digit code"}
+                </label>
+                <input
+                  id="two-factor-code"
+                  name="two-factor-code"
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9A-Za-z\-]{4,32}"
+                  maxLength={32}
+                  placeholder={useBackupCode ? "Backup code" : "000000"}
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value)}
+                  autoComplete="one-time-code"
+                  required
+                  aria-required="true"
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? errorId : undefined}
+                  autoFocus
+                />
+                {!useBackupCode && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Backup codes are one-time use — a wrong code consumes one and
+                    repeated failures can temporarily lock your account.
+                  </p>
+                )}
+              </div>
+              <Button
+                type="submit"
+                disabled={verifyTotpMutation.isPending || verifyBackupCodeMutation.isPending}
+                aria-disabled={!totpCode.trim() || verifyTotpMutation.isPending || verifyBackupCodeMutation.isPending}
+                className={`w-full ${(!totpCode.trim() && !verifyTotpMutation.isPending && !verifyBackupCodeMutation.isPending) ? "opacity-50" : ""}`}
+              >
+                {useBackupCode
+                  ? verifyBackupCodeMutation.isPending
+                    ? "Verifying…"
+                    : "Sign in with backup code"
+                  : verifyTotpMutation.isPending
+                    ? "Verifying…"
+                    : "Verify and sign in"}
+              </Button>
+            </form>
+          ) : (
           <form
             className="mt-6 space-y-4"
             method="post"
@@ -181,19 +289,39 @@ export function AuthPage() {
                   : "Create Account"}
             </Button>
           </form>
+          )}
 
-          <div className="mt-5 text-sm text-muted-foreground">
-            {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
+          {twoFactorStep && (
             <button
               type="button"
-              className="font-medium text-foreground underline underline-offset-2"
+              className="mt-5 text-sm font-medium text-foreground underline underline-offset-2"
               onClick={() => {
                 setError(null);
-                setMode(mode === "sign_in" ? "sign_up" : "sign_in");
+                setTotpCode("");
+                setUseBackupCode((value) => !value);
               }}
             >
-              {mode === "sign_in" ? "Create one" : "Sign in"}
+              {useBackupCode ? "Use my authenticator app instead" : "Use a backup code instead"}
             </button>
+          )}
+
+          <div className="mt-5 text-sm text-muted-foreground">
+            {twoFactorStep ? null : mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
+            {!twoFactorStep && (
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={() => {
+                  setError(null);
+                  setTwoFactorStep(null);
+                  setTotpCode("");
+                  setUseBackupCode(false);
+                  setMode(mode === "sign_in" ? "sign_up" : "sign_in");
+                }}
+              >
+                {mode === "sign_in" ? "Create one" : "Sign in"}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,7 +1,11 @@
 import { PaperclipApiError } from "./client.js";
 
+export type McpContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
 type McpTextResponse = {
-  content: Array<{ type: "text"; text: string }>;
+  content: McpContentBlock[];
 };
 
 export function formatTextResponse(value: unknown): McpTextResponse {
@@ -13,6 +17,21 @@ export function formatTextResponse(value: unknown): McpTextResponse {
       },
     ],
   };
+}
+
+/**
+ * Format a binary payload (e.g. an image) as an MCP image content block,
+ * optionally followed by a text caption.
+ */
+export function formatImageResponse(
+  input: { mimeType: string; base64: string; byteLength: number },
+  caption?: string,
+): McpTextResponse {
+  const blocks: McpContentBlock[] = [
+    { type: "image", data: input.base64, mimeType: input.mimeType },
+  ];
+  if (caption) blocks.push({ type: "text", text: caption });
+  return { content: blocks };
 }
 
 export function formatErrorResponse(error: unknown): McpTextResponse {

@@ -18,6 +18,11 @@ function getTool(name: string) {
   return tool;
 }
 
+function textOf(response: { content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> }): string {
+  const block = response.content.find((b) => b.type === "text");
+  return block && block.type === "text" ? block.text : "";
+}
+
 function mockJsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -52,6 +57,23 @@ describe("paperclip MCP tools", () => {
     );
   });
 
+  it("lists the company skill library with the default company id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockJsonResponse([{ key: "paperclipai/bundled/product/wireframe", name: "wireframe" }]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("paperclipListSkills");
+    const response = await tool.execute({});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(String(url)).toBe(
+      "http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/skills",
+    );
+    expect(textOf(response)).toContain("wireframe");
+  });
+
   it("uses default company id for company-scoped list tools", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       mockJsonResponse([{ id: "issue-1" }]),
@@ -66,7 +88,7 @@ describe("paperclip MCP tools", () => {
     expect(String(url)).toBe(
       "http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/issues",
     );
-    expect(response.content[0]?.text).toContain("issue-1");
+    expect(textOf(response)).toContain("issue-1");
   });
 
   it("uses default agent id for checkout requests", async () => {
@@ -205,7 +227,7 @@ describe("paperclip MCP tools", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.content[0]?.text).toContain("http://127.0.0.1:5173");
+    expect(textOf(response)).toContain("http://127.0.0.1:5173");
   });
 
   it("creates suggest_tasks interactions with the expected issue-scoped payload", async () => {
@@ -383,7 +405,7 @@ describe("paperclip MCP tools", () => {
       path: "issues",
     });
 
-    expect(response.content[0]?.text).toContain("path must start with /");
+    expect(textOf(response)).toContain("path must start with /");
   });
 
   it("rejects generic request paths that escape /api", async () => {
@@ -395,6 +417,6 @@ describe("paperclip MCP tools", () => {
       path: "/../../secret",
     });
 
-    expect(response.content[0]?.text).toContain("must not contain '..'");
+    expect(textOf(response)).toContain("must not contain '..'");
   });
 });

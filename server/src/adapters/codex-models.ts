@@ -2,7 +2,12 @@ import type { AdapterModel } from "./types.js";
 import { models as codexFallbackModels } from "@paperclipai/adapter-codex-local";
 import { readConfigFile } from "../config-file.js";
 
-const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
+const OPENAI_MODELS_ENDPOINT_DEFAULT = "https://api.openai.com/v1/models";
+function resolveModelsEndpoint(): string {
+  const base = process.env.OPENAI_BASE_URL?.trim();
+  if (base) return base.replace(/\/+$/, "") + "/models";
+  return OPENAI_MODELS_ENDPOINT_DEFAULT;
+}
 const OPENAI_MODELS_TIMEOUT_MS = 5000;
 const OPENAI_MODELS_CACHE_TTL_MS = 60_000;
 
@@ -45,7 +50,7 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_MODELS_TIMEOUT_MS);
   try {
-    const response = await fetch(OPENAI_MODELS_ENDPOINT, {
+    const response = await fetch(resolveModelsEndpoint(), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },

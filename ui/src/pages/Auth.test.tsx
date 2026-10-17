@@ -11,12 +11,16 @@ import { AuthPage } from "./Auth";
 const getSessionMock = vi.hoisted(() => vi.fn());
 const signInEmailMock = vi.hoisted(() => vi.fn());
 const signUpEmailMock = vi.hoisted(() => vi.fn());
+const verifyTotpMock = vi.hoisted(() => vi.fn());
+const verifyBackupCodeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/auth", () => ({
   authApi: {
     getSession: () => getSessionMock(),
     signInEmail: (input: unknown) => signInEmailMock(input),
     signUpEmail: (input: unknown) => signUpEmailMock(input),
+    verifyTotp: (code: string) => verifyTotpMock(code),
+    verifyBackupCode: (code: string) => verifyBackupCodeMock(code),
   },
 }));
 
@@ -86,8 +90,10 @@ describe("AuthPage", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     getSessionMock.mockResolvedValue(null);
-    signInEmailMock.mockResolvedValue(undefined);
+    signInEmailMock.mockResolvedValue({});
     signUpEmailMock.mockResolvedValue(undefined);
+    verifyTotpMock.mockResolvedValue({ status: true });
+    verifyBackupCodeMock.mockResolvedValue({ token: "session-token" });
   });
 
   afterEach(() => {
@@ -248,6 +254,152 @@ describe("AuthPage", () => {
       password: "supersecret",
     });
     expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(true);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("completes a gated sign-in through the TOTP step instead of navigating away", async () => {
+    const { root, queryClient } = await mount();
+    // Seed health so invalidateQueries has a cache entry to mark; the active
+    // auth.session observer auto-refetches on invalidation and clears itself.
+    queryClient.setQueryData(queryKeys.health, { status: "ok" });
+
+    signInEmailMock.mockResolvedValueOnce({
+      twoFactorRedirect: true,
+      twoFactorMethods: ["totp"],
+    });
+
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+
+    await act(async () => {
+      inputValueSetter!.call(emailInput, "jane@example.com");
+      emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      inputValueSetter!.call(passwordInput, "supersecret");
+      passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const form = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    // The password step is gone and the challenge step is shown instead.
+    expect(container.querySelector('input[name="password"]')).toBeNull();
+    const codeInput = container.querySelector(
+      'input[name="two-factor-code"]',
+    ) as HTMLInputElement;
+    expect(codeInput).not.toBeNull();
+    expect(codeInput.getAttribute("autocomplete")).toBe("one-time-code");
+    expect(container.textContent).toContain("Two-factor verification");
+
+    // No session query invalidation yet — completion waits for the code.
+    expect(queryClient.getQueryState(queryKeys.auth.session)?.isInvalidated).toBeFalsy();
+
+    // Backup-code fallback link swaps the step.
+    const backupLink = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Use a backup code instead",
+    );
+    expect(backupLink).not.toBeNull();
+    await act(async () => {
+      backupLink?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(container.querySelector('input[name="two-factor-code"]')).not.toBeNull();
+    expect(container.textContent).toContain("Backup code");
+
+    // Back to TOTP, then verify.
+    await act(async () => {
+      Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Use my authenticator app instead",
+      )?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    await act(async () => {
+      inputValueSetter!.call(codeInput, "123456");
+      codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const challengeForm = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      challengeForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(verifyTotpMock).toHaveBeenCalledWith("123456");
+    expect(verifyBackupCodeMock).not.toHaveBeenCalled();
+    // health has no active observer, so it stays invalidated; auth.session is
+    // auto-refetched by the active observer during completeTwoFactor and clears.
+    expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(true);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("completes a gated sign-in with a one-time backup code", async () => {
+    const { root } = await mount();
+
+    signInEmailMock.mockResolvedValueOnce({
+      twoFactorRedirect: true,
+      twoFactorMethods: ["totp"],
+    });
+
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+
+    await act(async () => {
+      inputValueSetter!.call(emailInput, "jane@example.com");
+      emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      inputValueSetter!.call(passwordInput, "supersecret");
+      passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const form = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    await act(async () => {
+      Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Use a backup code instead",
+      )?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    const codeInput = container.querySelector(
+      'input[name="two-factor-code"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      inputValueSetter!.call(codeInput, "abcd1234");
+      codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const challengeForm = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      challengeForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(verifyBackupCodeMock).toHaveBeenCalledWith("abcd1234");
+    expect(verifyTotpMock).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

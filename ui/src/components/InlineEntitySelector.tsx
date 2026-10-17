@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { orderItemsBySelectedAndRecent } from "../lib/recent-selections";
@@ -27,6 +27,14 @@ interface InlineEntitySelectorProps {
   disablePortal?: boolean;
   /** Open the popover when the trigger receives keyboard/programmatic focus. */
   openOnFocus?: boolean;
+  /** Disable the trigger and prevent the popover from opening. */
+  disabled?: boolean;
+  /** Optional test id forwarded to the trigger button. */
+  triggerTestId?: string;
+  /** Optional slot name used by consuming surfaces for scoped presentation rules. */
+  triggerDataSlot?: string;
+  /** Runtime geometry variables for the portalled mobile picker sheet. */
+  contentStyle?: CSSProperties;
 }
 
 const EMPTY_RECENT_OPTION_IDS: string[] = [];
@@ -48,6 +56,10 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       recentOptionIds = EMPTY_RECENT_OPTION_IDS,
       disablePortal,
       openOnFocus = true,
+      disabled = false,
+      triggerTestId,
+      triggerDataSlot,
+      contentStyle,
     },
     ref,
   ) {
@@ -104,6 +116,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       <Popover
         open={open}
         onOpenChange={(next) => {
+          if (disabled) return;
           setOpen(next);
           if (!next) setQuery("");
         }}
@@ -112,12 +125,16 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
           <button
             ref={ref}
             type="button"
+            disabled={disabled}
+            data-testid={triggerTestId}
+            data-slot={triggerDataSlot}
             className={cn(
-              "inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-sm font-medium text-foreground transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-sm font-medium text-foreground transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none",
               className,
             )}
             onPointerDown={() => { isPointerDownRef.current = true; }}
             onFocus={() => {
+              if (disabled) return;
               if (openOnFocus && !isPointerDownRef.current) setOpen(true);
               isPointerDownRef.current = false;
             }}
@@ -128,11 +145,13 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
           </button>
         </PopoverTrigger>
         <PopoverContent
+          data-mobile-entity-picker=""
           align="start"
           side="bottom"
           collisionPadding={16}
           className="w-(--sz-calc-6) p-1"
           disablePortal={disablePortal}
+          style={contentStyle}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             inputRef.current?.focus();
@@ -145,7 +164,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
         >
           <input
             ref={inputRef}
-            className="w-full border-b border-border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground/60"
+            className="w-full border-b border-border bg-transparent px-2 py-1.5 text-base outline-none placeholder:text-muted-foreground/60 md:text-sm"
             placeholder={searchPlaceholder}
             value={query}
             onChange={(event) => {
@@ -188,7 +207,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
               }
             }}
           />
-          <div className="max-h-56 overflow-y-auto overscroll-contain py-1 touch-pan-y">
+          <div data-mobile-entity-picker-list="" className="max-h-56 overflow-y-auto overscroll-contain py-1 touch-pan-y">
             {filteredOptions.length === 0 ? (
               <p className="px-2 py-2 text-xs text-muted-foreground">{emptyMessage}</p>
             ) : (

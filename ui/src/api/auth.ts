@@ -6,6 +6,7 @@ import {
   type UpdateCurrentUserProfile,
 } from "@paperclipai/shared";
 import { redactUrlSecrets } from "@/lib/redact-url-secrets";
+import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 
 type AuthErrorBody =
   | {
@@ -18,6 +19,30 @@ type AuthErrorBody =
 export interface SignOutResult {
   success?: boolean;
   redirectTo?: string;
+}
+
+export interface SignWithEmailResult {
+  /**
+   * True when the account has two-factor enabled: the sign-in request was
+   * intercepted, no session was issued, and a TOTP (or backup-code)
+   * challenge must complete before a session exists.
+   */
+  twoFactorRedirect?: boolean;
+  /** Enabled two-factor providers, e.g. ["totp"]. */
+  twoFactorMethods?: string[];
+}
+
+export interface EnableTotpResult {
+  /** otpauth:// URI for the authenticator app (base32 secret embedded). */
+  totpURI: string;
+  /** One-time backup codes issued at enrollment. */
+  backupCodes: string[];
+}
+
+export interface TwoFactorVerifyResult {
+  status?: boolean;
+  token?: string;
+  user?: { id: string; email?: string | null };
 }
 
 export class AuthApiError extends Error {
@@ -125,6 +150,8 @@ async function authPost(path: string, body: Record<string, unknown>): Promise<un
   }
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
+    const recovery = tenantSessionRecovery.recoverIfNeeded(res.status, payload);
+    if (recovery) return recovery;
     logAuthHttpError("POST", path, res.status, res.statusText, payload);
     throw extractAuthError(payload as AuthErrorBody, res.status);
   }
@@ -140,6 +167,8 @@ async function authPatch<T>(path: string, body: Record<string, unknown>, parse: 
   });
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
+    const recovery = tenantSessionRecovery.recoverIfNeeded(res.status, payload);
+    if (recovery) return recovery;
     throw extractAuthError(payload as AuthErrorBody, res.status);
   }
   return parse(payload);
@@ -151,9 +180,11 @@ export const authApi = {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
-    if (res.status === 401) return null;
     const payload = await res.json().catch(() => null);
     if (!res.ok) {
+      const recovery = tenantSessionRecovery.recoverIfNeeded(res.status, payload);
+      if (recovery) return recovery;
+      if (res.status === 401) return null;
       throw new Error(`Failed to load session (${res.status})`);
     }
     const direct = toSession(payload);
@@ -162,8 +193,54 @@ export const authApi = {
     return nested;
   },
 
-  signInEmail: async (input: { email: string; password: string }) => {
-    await authPost("/sign-in/email", input);
+  signInEmail: async (input: { email: string; password: string }): Promise<SignWithEmailResult> => {
+    const payload = await authPost("/sign-in/email", input);
+    if (payload && typeof payload === "object") {
+      const record = payload as Record<string, unknown>;
+      return {
+        ...(typeof record.twoFactorRedirect === "boolean" ? { twoFactorRedirect: record.twoFactorRedirect } : {}),
+        ...(Array.isArray(record.twoFactorMethods)
+          ? { twoFactorMethods: record.twoFactorMethods.filter((value): value is string => typeof value === "string") }
+          : {}),
+      };
+    }
+    return {};
+  },
+
+  enableTotp: async (password: string): Promise<EnableTotpResult> => {
+    const payload = await authPost("/two-factor/enable", { password, method: "totp" });
+    if (!payload || typeof payload !== "object") {
+      throw new AuthApiError("Unexpected response from two-factor enable", 500, payload);
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.totpURI !== "string" || !Array.isArray(record.backupCodes)) {
+      throw new AuthApiError("Unexpected response from two-factor enable", 500, payload);
+    }
+    return {
+      totpURI: record.totpURI,
+      backupCodes: record.backupCodes.filter((value): value is string => typeof value === "string"),
+    };
+  },
+
+  verifyTotp: async (code: string): Promise<TwoFactorVerifyResult> => {
+    const payload = await authPost("/two-factor/verify-totp", { code });
+    return (payload && typeof payload === "object")
+      ? (payload as TwoFactorVerifyResult)
+      : {};
+  },
+
+  verifyBackupCode: async (code: string): Promise<TwoFactorVerifyResult> => {
+    const payload = await authPost("/two-factor/verify-backup-code", { code });
+    return (payload && typeof payload === "object")
+      ? (payload as TwoFactorVerifyResult)
+      : {};
+  },
+
+  disableTotp: async (password: string): Promise<{ status?: boolean }> => {
+    const payload = await authPost("/two-factor/disable", { password });
+    return (payload && typeof payload === "object")
+      ? (payload as { status?: boolean })
+      : {};
   },
 
   signUpEmail: async (input: { name: string; email: string; password: string }) => {
@@ -177,6 +254,8 @@ export const authApi = {
     });
     const payload = await res.json().catch(() => null);
     if (!res.ok) {
+      const recovery = tenantSessionRecovery.recoverIfNeeded(res.status, payload);
+      if (recovery) return recovery;
       throw new Error((payload as { error?: string } | null)?.error ?? `Failed to load profile (${res.status})`);
     }
     return currentUserProfileSchema.parse(payload);

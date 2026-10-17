@@ -9,6 +9,7 @@ import {
 } from "@paperclipai/shared";
 import { unauthorized } from "../errors.js";
 import { validate } from "../middleware/validate.js";
+import { resolveSentryDsns } from "../sentry-dsn.js";
 
 async function loadCurrentUserProfile(db: Db, userId: string) {
   const user = await db
@@ -17,6 +18,7 @@ async function loadCurrentUserProfile(db: Db, userId: string) {
       email: authUsers.email,
       name: authUsers.name,
       image: authUsers.image,
+      twoFactorEnabled: authUsers.twoFactorEnabled,
     })
     .from(authUsers)
     .where(eq(authUsers.id, userId))
@@ -31,6 +33,7 @@ async function loadCurrentUserProfile(db: Db, userId: string) {
     email: user.email ?? null,
     name: user.name ?? null,
     image: user.image ?? null,
+    twoFactorEnabled: user.twoFactorEnabled,
   });
 }
 
@@ -49,6 +52,13 @@ export function authRoutes(db: Db) {
         userId: req.actor.userId,
       },
       user,
+      // The browser reads this value to open its own Sentry gate — see
+      // `ui/src/lib/sentry.ts`. `req.actor.type` already gates this whole
+      // handler, so no second authorization check runs here. This field
+      // carries the front-end DSN only; it never carries the backend DSN.
+      sentryDsn: resolveSentryDsns().frontend,
+      // Match the server SDK's runtime environment, including in reused images.
+      sentryEnvironment: process.env.SENTRY_ENVIRONMENT || null,
     }));
   });
 
