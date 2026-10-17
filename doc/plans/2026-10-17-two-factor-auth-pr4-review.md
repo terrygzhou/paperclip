@@ -112,3 +112,20 @@ Notes on the fix commit:
      `workspaces-a`/`workspaces-c`/`e2e` shard failures were flakes.
   3. Update PR #4 checklist boxes to `[x]` once both are confirmed; then request
      merge.
+
+## CI outcome at head `1cf6482c0` (run 38998697839, 2026-10-17)
+
+- `ci / policy` now **passes** — confirms the lockfile-hunk revert cleared that gate.
+- `Sentry SDK contract` passes. All 12 general server/chat test groups and
+  `workspaces-b` pass.
+- Failures: `ci / e2e shard (8/8)` → `ci / e2e`; `ci / General tests
+  (workspaces-a (1/2))`, `(workspaces-a (2/2))`, `(workspaces-c)` → `ci /
+  verify`. Same shard set that flaked in the prior run; suspected pre-existing
+  flakes (branch touches none of the e2e/workspaces test files or their deps —
+  verify locally before re-running if a rerun is possible).
+- `commitperclip PR Review` run 38998696020 fails at the **Dependency Review**
+  step — dependency graph not enabled on the fork (maintainer Settings change,
+  still outstanding).
+- Note: this fork's GitHub API surface is partially degraded (jobs-list
+  intermittently returns 30/48 entries, single-job/check-run/log GETs return
+  404); use `per_page=100` polling and the jobs-list endpoint when re-checking.
