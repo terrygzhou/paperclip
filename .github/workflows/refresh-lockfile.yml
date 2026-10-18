@@ -65,6 +65,7 @@ jobs:
           fi
 
           BRANCH="chore/refresh-lockfile"
+          REPO="$REPO_OWNER/paperclip"
           git config user.name "lockfile-bot"
           git config user.email "lockfile-bot@users.noreply.github.com"
 
@@ -73,26 +74,56 @@ jobs:
           git commit -m "chore(lockfile): refresh pnpm-lock.yaml"
           git push --force origin "$BRANCH"
 
-          # Only reuse an open PR from this repository owner, not a fork with the same branch name.
+          # GITHUB_TOKEN is blocked from the GraphQL createPullRequest mutation,
+          # so use the REST API instead, which works with contents:write +
+          # pull-requests:write on push events.
+
+          # Reuse an open PR from this repository owner only, not a fork with
+          # the same branch name.
           pr_url="$(
-            gh pr list --state open --head "$BRANCH" --json url,headRepositoryOwner \
-              --jq ".[] | select(.headRepositoryOwner.login == \"$REPO_OWNER\") | .url" |
-            head -n 1
-          )"
+            curl -s -f -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/pulls?state=open&head=$REPO_OWNER:$BRANCH" \
+              | python3 -c "
+            import json,sys
+            prs=json.load(sys.stdin)
+            matches=[p for p in prs if p.get('head',{}).get('repo',{}).get('login')=='$REPO_OWNER']
+            print(matches[0]['html_url'] if matches else '')
+          " | tr -d '[:space:]')"
+
           if [ -z "$pr_url" ]; then
-            pr_url="$(gh pr create \
-              --head "$BRANCH" \
-              --title "chore(lockfile): refresh pnpm-lock.yaml" \
-              --body "Auto-generated lockfile refresh after dependencies changed on master. This PR only updates pnpm-lock.yaml.")"
+            pr_url="$(
+              curl -s -f -X POST -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                -d "$(python3 -c "
+            import json
+            print(json.dumps({
+              'head': '$REPO_OWNER:$BRANCH',
+              'base': 'master',
+              'title': 'chore(lockfile): refresh pnpm-lock.yaml',
+              'body': 'Auto-generated lockfile refresh after dependencies changed on master. This PR only updates pnpm-lock.yaml.',
+            }))
+          ")" \
+                "https://api.github.com/repos/$REPO/pulls" \
+                | python3 -c "import json,sys; print(json.load(sys.stdin).get('html_url',''))"
+            )"
             echo "Created new PR: $pr_url"
           else
             echo "PR already exists: $pr_url"
           fi
           echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
 
-      - name: Enable auto-merge for lockfile PR
+      - name: Auto-merge lockfile PR (squash, delete branch)
         if: steps.upsert-pr.outputs.pr_url != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr merge --auto --squash --delete-branch "${{ steps.upsert-pr.outputs.pr_url }}"
+          PR_URL="${{ steps.upsert-pr.outputs.pr_url }}"
+          REPO="$(python3 -c "import sys; p=sys.argv[1].split('/'); print('/'.join(p[2:4]))" "$PR_URL")"
+          PR_NUMBER="$(python3 -c "import sys; p=sys.argv[1].split('/'); print(p[-1])" "$PR_URL")"
+          echo "Merging PR #${PR_NUMBER} on ${REPO}"
+          curl -s -f -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"merge_method": "squash", "delete_branch": true}' \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/merge"
