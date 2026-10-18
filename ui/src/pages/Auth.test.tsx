@@ -15,6 +15,8 @@ const healthMock = vi.hoisted(() => vi.fn());
 const beginCloudSignInMock = vi.hoisted(() => vi.fn());
 const verifyTotpMock = vi.hoisted(() => vi.fn());
 const verifyBackupCodeMock = vi.hoisted(() => vi.fn());
+const getProvidersMock = vi.hoisted(() => vi.fn());
+const signInGoogleMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/health", () => ({ healthApi: { get: () => healthMock() } }));
 vi.mock("@/lib/cloud-sign-in", () => ({
@@ -29,6 +31,8 @@ vi.mock("../api/auth", () => ({
     signUpEmail: (input: unknown) => signUpEmailMock(input),
     verifyTotp: (code: string) => verifyTotpMock(code),
     verifyBackupCode: (code: string) => verifyBackupCodeMock(code),
+    getProviders: () => getProvidersMock(),
+    signInGoogle: (opts: unknown) => signInGoogleMock(opts),
   },
 }));
 
@@ -104,6 +108,8 @@ describe("AuthPage", () => {
     signUpEmailMock.mockResolvedValue(undefined);
     verifyTotpMock.mockResolvedValue({ status: true });
     verifyBackupCodeMock.mockResolvedValue({ token: "session-token" });
+    getProvidersMock.mockResolvedValue({ ssoProviders: [], googleSsoEnabled: false });
+    signInGoogleMock.mockResolvedValue({ url: "https://accounts.google.com/x", redirect: true });
   });
 
   afterEach(() => {
@@ -473,5 +479,47 @@ describe("AuthPage", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it("hides the Google sign-in button when googleSsoEnabled is false", async () => {
+    getProvidersMock.mockResolvedValue({ ssoProviders: [], googleSsoEnabled: false });
+    const { root } = await mount();
+    await flushReact();
+    await flushReact();
+    const googleButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent === "Sign in with Google",
+    );
+    expect(googleButton).toBeUndefined();
+    await act(() => root.unmount());
+  });
+
+  it("shows the Google sign-in button when googleSsoEnabled is true and calls signInGoogle on click", async () => {
+    getProvidersMock.mockResolvedValue({ ssoProviders: ["google"], googleSsoEnabled: true });
+    const { root } = await mount("/auth?next=%2Fissues");
+    await flushReact();
+    await flushReact();
+    const googleButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent === "Sign in with Google",
+    ) as HTMLButtonElement;
+    expect(googleButton).not.toBeNull();
+    await act(async () => {
+      googleButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(signInGoogleMock).toHaveBeenCalledWith({
+        successRedirectUrl: "/issues",
+      }),
+    );
+    await act(() => root.unmount());
+  });
+
+  it("renders the Google callback error banner when google_error=callback_failed is present", async () => {
+    const { root } = await mount("/auth?google_error=callback_failed");
+    await flushReact();
+    await flushReact();
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain("Google sign-in failed");
+    await act(() => root.unmount());
   });
 });
