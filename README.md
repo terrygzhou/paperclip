@@ -257,7 +257,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 <tr>
 <td width="50%">
 
-**Identity & Access** — Two deployment modes (trusted local or authenticated), human roles and permissions, agent API keys, short-lived run JWTs, company memberships, and invite flows. Responsible-user attribution follows work through delegation and supported managed connections.
+**Identity & Access** — Two deployment modes (trusted local or authenticated), human roles and permissions, agent API keys, short-lived run JWTs, company memberships, invite flows, and per-account opt-in two-factor authentication (TOTP + backup codes). Responsible-user attribution follows work through delegation and supported managed connections.
 
 </td>
 <td width="50%">
@@ -520,6 +520,7 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 - ✅ Document Comments & Revision History
 - ✅ Company-Wide Search
 - ✅ Multi-Model & Multi-Harness Teams
+- ✅ Two-Factor Authentication (TOTP + backup codes)
 - 🟡 Memory / Knowledge
 - ⚪ MAXIMIZER MODE
 - ⚪ Work Queues
