@@ -156,3 +156,36 @@ Updated remaining work:
 3. Enable the fork's dependency graph (owner action).
 4. Re-run and check the three boxes.
 
+
+## Update — 2026-10-18
+
+Branch `mfa/totp-two-factor` was rebased onto latest `upstream/master`
+(`5555817c2`); now 0 behind / 13 ahead. The two upstream commits are
+service-only (no migrations), so the MFA migration `0355_two_factor_auth`
+is unchanged and the existing database remains compatible.
+
+P3 review findings closed in `95e375d77`:
+
+- **P3 (dead index)**: dropped `two_factor_secret_idx` — it indexed the
+  encrypted TOTP `secret` blob but no query looks the table up by secret
+  (verification is by `user_id`). Removed from
+  `packages/db/src/schema/auth.ts` and migration `0355`.
+- **P3 (test duplication)**: `packages/shared/src/validators/access.test.ts`
+  had a second near-verbatim `currentUserProfileSchema` block (~109 lines).
+  Removed; the original block + `authSessionSchema` fixtures carry
+  `twoFactorEnabled`.
+
+`htmlFor`/`id` mismatches and the dead `isPending` from the original P3 list
+were already resolved in `1cf6482c0` (verified against current
+`TwoFactorSettings.tsx`).
+
+Verification on the new head: `pnpm -r typecheck`, `pnpm build`, and
+`pnpm check:token-gates` are clean; the auth test suites
+(`access.test.ts` 24, `auth-routes.test.ts` 17, UI auth suites
+62 passed / 5 skipped) all pass. Full `pnpm test:run` was not run locally
+(chat-channels lock-contention flake in the dev environment, unrelated to
+this diff).
+
+PR #4 head is `95e375d77`; CI re-running. The `review` (Dependency Review)
+gate still requires the maintainer to enable the dependency graph on the
+fork.
