@@ -241,6 +241,56 @@ export function resolveWorkspaceHandoffIdentity(
 }
 
 /**
+ * Whether Google SSO sign-in is enabled for this instance.
+ *
+ * Enabled only when BOTH `PAPERCLIP_GOOGLE_CLIENT_ID` and
+ * `PAPERCLIP_GOOGLE_CLIENT_SECRET` are set in the server environment. When
+ * either is unset the provider is not registered, the sign-in button is not
+ * rendered by the UI, and `GET /api/auth/callback/google` is not served.
+ */
+export function isGoogleSsoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(
+    env.PAPERCLIP_GOOGLE_CLIENT_ID?.trim() &&
+      env.PAPERCLIP_GOOGLE_CLIENT_SECRET?.trim(),
+  );
+}
+
+/**
+ * Build the Better Auth `socialProviders.google` config record when the Google
+ * SSO env vars are set. Returns `undefined` otherwise, so the provider is not
+ * registered at all and Better Auth's catch-all handler 404s
+ * `/api/auth/sign-in/social` for google and `/api/auth/callback/google`.
+ *
+ * Better Auth 1.7.2 builds `context.socialProviders` from the
+ * `socialProviders` options map at context-creation time — NOT from the
+ * plugin list. Registering the provider through that map is what makes
+ * `POST /sign-in/social` (and `GET /callback/google`) resolve "google".
+ *
+ * - PKCE (S256) is the generic-OAuth core default; the code verifier is held
+ *   in the state cookie.
+ * - `id_token` verification is the provider's built-in `idToken` block.
+ * - `prompt: "select_account"` forces the account chooser even when a Google
+ *   session already exists.
+ */
+// Build the Better Auth `socialProviders.google` config record (the map value
+// Better Auth's context builder consumes) when the Google SSO env vars are set.
+// Returns `undefined` otherwise so the provider is not registered at all and
+// Better Auth's catch-all handler 404s the google social routes.
+export function buildGoogleSsoConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, unknown> | undefined {
+  if (!isGoogleSsoEnabled(env)) return undefined;
+  return {
+    google: {
+      clientId: env.PAPERCLIP_GOOGLE_CLIENT_ID!.trim(),
+      clientSecret: env.PAPERCLIP_GOOGLE_CLIENT_SECRET!.trim(),
+      scope: ["openid", "email", "profile"],
+      prompt: "select_account",
+    },
+  };
+}
+
+/**
  * Assemble the Better Auth plugin list.
  *
  * - `twoFactor()` (TOTP + backup codes) is always registered. It is strictly
@@ -261,12 +311,16 @@ function buildBetterAuthPlugins(db: Db, config: Config) {
     issuer: "Paperclip",
     backupCodeOptions: { storeBackupCodes: "encrypted" },
   });
+  // Google SSO is registered separately via `authConfig.socialProviders`
+  // (see createBetterAuthInstance) because Better Auth resolves social
+  // providers from that options map, not from the plugin list.
+  const basePlugins = [twoFactorPlugin];
   const handoffIdentity = resolveWorkspaceHandoffIdentity(config);
   if (!handoffIdentity) {
-    return [twoFactorPlugin];
+    return basePlugins;
   }
   return [
-    twoFactorPlugin,
+    ...basePlugins,
     workspaceLoginHandoffPlugin({
       db,
       // Re-resolved per exchange so a hot restart cannot keep validating
@@ -328,6 +382,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     }),
     advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies }),
     plugins: buildBetterAuthPlugins(db, config),
+    ...(buildGoogleSsoConfig() ? { socialProviders: buildGoogleSsoConfig() } : {}),
   };
 
   if (!baseUrl) {

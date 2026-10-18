@@ -8,6 +8,7 @@ import { clearCloudSignInAttempt } from "@/lib/cloud-sign-in";
 import { tenantSignInReturnPath } from "@/lib/cloudLinks";
 import { queryKeys } from "../lib/queryKeys";
 import { getRememberedInvitePath } from "../lib/invite-memory";
+import { isSafeReturnTo } from "../lib/google-sso";
 import { Button } from "@/components/ui/button";
 import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
 import { PaperclipLoading } from "@/components/AnimatedPaperclipIcon";
@@ -25,6 +26,10 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // When the Google OAuth callback fails, Better Auth redirects back to the
+  // sign-in page with `google_error=callback_failed`. Surface a banner.
+  const googleCallbackError = searchParams.get("google_error") === "callback_failed";
+  const googleCallbackErrorMsg = "Google sign-in failed. Try again.";
   // Two-factor step: set when sign-in returns a twoFactorRedirect challenge.
   const [twoFactorStep, setTwoFactorStep] = useState<SignWithEmailResult | null>(null);
   const [totpCode, setTotpCode] = useState("");
@@ -45,6 +50,12 @@ export function AuthPage() {
     queryFn: () => authApi.getSession(),
     retry: false,
   });
+  const providersQuery = useQuery({
+    queryKey: queryKeys.auth.providers,
+    queryFn: () => authApi.getProviders(),
+    retry: false,
+  });
+  const googleSsoEnabled = mode === "sign_in" && !twoFactorStep && providersQuery.data?.googleSsoEnabled === true;
 
   useEffect(() => {
     if (session) {
@@ -116,6 +127,20 @@ export function AuthPage() {
       setError(err instanceof Error ? err.message : "Verification failed");
     },
   });
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const safeReturn = isSafeReturnTo(nextPath);
+      const result = await authApi.signInGoogle({ successRedirectUrl: safeReturn ?? "/" });
+      if (result.url) {
+        window.location.assign(result.url);
+      } else {
+        setError("Google sign-in could not start. Try again.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    }
+  };
 
   const canSubmit =
     email.trim().length > 0 &&
@@ -290,10 +315,20 @@ export function AuthPage() {
                 aria-describedby={error ? errorId : undefined}
               />
             </div>
-            {error && (
+            {(error || googleCallbackError) && (
               <p id={errorId} role="alert" className="text-xs text-destructive">
-                {error}
+                {googleCallbackError ? googleCallbackErrorMsg : error}
               </p>
+            )}
+            {googleSsoEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleGoogleSignIn}
+              >
+                Sign in with Google
+              </Button>
             )}
             <Button
               type="submit"

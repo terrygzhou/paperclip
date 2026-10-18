@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@paperclipai/shared";
 import {
   readPaperclipRuntimeSkillEntries,
+  ensurePaperclipSkillSymlink,
+  resolvePaperclipInstanceRootForAdapter,
   applyPaperclipWorkspaceEnv,
   appendWithByteCap,
   buildPersistentSkillSnapshot,
@@ -3999,5 +4001,110 @@ describe("wake continuation comment ownership", () => {
       executionContinuation: { ...continuation([]), objective },
     }, { suppressIssueDescription: true });
     expect(legacy).toContain(`"objective":"${objective}"`);
+  });
+});
+
+describe("ensurePaperclipSkillSymlink managed-catalog repair", () => {
+  const sourceRoot = path.join(os.tmpdir(), "paperclip-symlink-src");
+  const sourceA = path.join(sourceRoot, "sourceA");
+
+  async function withTempRoot<T>(
+    build: (root: string, foreign: string, slot: string) => Promise<T>,
+  ): Promise<T> {
+    const tmpHome = await fs.mkdtemp(
+      path.join(os.tmpdir(), "paperclip-symlink-mgr-"),
+    );
+    try {
+      const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+        homeDir: tmpHome,
+      });
+      const companyId = randomUUID();
+      const skillId = randomUUID();
+      const versionId = randomUUID();
+      const foreign = path.join(
+        instanceRoot,
+        "skills",
+        companyId,
+        "__versions__",
+        skillId,
+        versionId,
+      );
+      await fs.mkdir(foreign, { recursive: true });
+      await fs.writeFile(path.join(foreign, "SKILL.md"), "# foreign\n", "utf8");
+      await fs.mkdir(sourceA, { recursive: true });
+      await fs.writeFile(path.join(sourceA, "SKILL.md"), "# a\n", "utf8");
+      // The "slot" is a user skill directory in the hermes home, unrelated to
+      // the Paperclip catalog tree.
+      const slot = path.join(tmpHome, ".hermes", "skills", "slot");
+      await fs.mkdir(path.dirname(slot), { recursive: true });
+      return await build(instanceRoot, foreign, slot);
+    } finally {
+      await fs.rm(tmpHome, { recursive: true, force: true });
+    }
+  }
+
+  it("repairs a live symlink pointing into a foreign managed catalog", async () => {
+    await withTempRoot(async (instanceRoot, foreign, slot) => {
+      await fs.symlink(foreign, slot);
+      const result = await ensurePaperclipSkillSymlink(
+        sourceA,
+        slot,
+        undefined,
+        { managedCatalogRoot: instanceRoot },
+      );
+      expect(result).toBe("repaired");
+      expect(await fs.readlink(slot)).toBe(sourceA);
+    });
+  });
+
+  it("keeps skipping a live symlink to a non-managed foreign dir", async () => {
+    await withTempRoot(async (instanceRoot, _foreign, slot) => {
+      const external = path.join(
+        path.dirname(instanceRoot),
+        "external",
+        "paperclip",
+      );
+      await fs.mkdir(external, { recursive: true });
+      await fs.writeFile(
+        path.join(external, "SKILL.md"),
+        "# external\n",
+        "utf8",
+      );
+      await fs.symlink(external, slot);
+      const result = await ensurePaperclipSkillSymlink(
+        sourceA,
+        slot,
+        undefined,
+        { managedCatalogRoot: instanceRoot },
+      );
+      expect(result).toBe("skipped");
+      expect(await fs.readlink(slot)).toBe(external);
+    });
+  });
+
+  it("skips when the link already points at the desired source", async () => {
+    await withTempRoot(async (instanceRoot, _foreign, slot) => {
+      await fs.symlink(sourceA, slot);
+      const result = await ensurePaperclipSkillSymlink(
+        sourceA,
+        slot,
+        undefined,
+        { managedCatalogRoot: instanceRoot },
+      );
+      expect(result).toBe("skipped");
+    });
+  });
+
+  it("creates the link when no link exists yet", async () => {
+    await withTempRoot(async (instanceRoot, _foreign, slot) => {
+      const result = await ensurePaperclipSkillSymlink(
+        sourceA,
+        slot,
+        undefined,
+        { managedCatalogRoot: instanceRoot },
+      );
+      expect(result).toBe("created");
+      expect(await fs.readlink(slot)).toBe(sourceA);
+    });
   });
 });

@@ -209,6 +209,42 @@ export function resolvePaperclipInstanceRootForAdapter(
   return path.resolve(homeDir, "instances", instanceId);
 }
 
+const PAPERCLIP_MANAGED_CATALOG_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Returns true when `resolvedPath` resolves to a Paperclip-managed materialized
+ * skill catalog directory beneath `instanceRoot`, i.e. one of the shapes:
+ *   skills/<uuid>/__versions__/<uuid>/<uuid>
+ *   skills/<uuid>/__versions__/<uuid>
+ * The materialized-skill sentinel is NOT written into version dirs, so "managed"
+ * can only be detected by this path shape. A path that escapes `instanceRoot`
+ * (relative result starts with "..") or is absolute is never managed.
+ */
+export function isPaperclipManagedCatalogPath(
+  resolvedPath: string,
+  instanceRoot: string,
+): boolean {
+  const relative = path.relative(instanceRoot, resolvedPath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
+  const segments = relative
+    .split(path.sep)
+    .filter((segment) => segment.length > 0);
+  // Depth 5 = full catalog shape, depth 4 = lenient version-dir shape.
+  if (segments.length !== 4 && segments.length !== 5) return false;
+  if (segments[0] !== "skills") return false;
+  if (!PAPERCLIP_MANAGED_CATALOG_UUID_RE.test(segments[1])) return false;
+  if (segments[2] !== "__versions__") return false;
+  if (!PAPERCLIP_MANAGED_CATALOG_UUID_RE.test(segments[3])) return false;
+  if (
+    segments.length === 5 &&
+    !PAPERCLIP_MANAGED_CATALOG_UUID_RE.test(segments[4])
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export const DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE = [
   "You are agent {{agent.id}} ({{agent.name}}).",
   "",
@@ -4350,6 +4386,7 @@ export async function ensurePaperclipSkillSymlink(
     linkSource,
     linkTarget,
   ) => fs.symlink(linkSource, linkTarget),
+  opts?: { managedCatalogRoot?: string },
 ): Promise<"created" | "repaired" | "skipped"> {
   const existing = await fs.lstat(target).catch(() => null);
   if (!existing) {
@@ -4367,6 +4404,27 @@ export async function ensurePaperclipSkillSymlink(
   const resolvedLinkedPath = path.resolve(path.dirname(target), linkedPath);
   if (resolvedLinkedPath === source) {
     return "skipped";
+  }
+
+  // If the slot's live symlink points into another company's managed
+  // Paperclip materialized catalog, re-link it to the desired source instead of
+  // surfacing an "occupied by another installation" conflict. Non-managed
+  // (user-installed) foreign points keep the existing behavior below.
+  let managedCatalogRoot = opts?.managedCatalogRoot;
+  if (managedCatalogRoot === undefined) {
+    try {
+      managedCatalogRoot = resolvePaperclipInstanceRootForAdapter();
+    } catch {
+      managedCatalogRoot = undefined;
+    }
+  }
+  if (
+    managedCatalogRoot !== undefined &&
+    isPaperclipManagedCatalogPath(resolvedLinkedPath, managedCatalogRoot)
+  ) {
+    await fs.unlink(target);
+    await linkSkill(source, target);
+    return "repaired";
   }
 
   const linkedPathExists = await fs
