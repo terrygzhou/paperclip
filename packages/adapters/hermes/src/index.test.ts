@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
 
 import {
@@ -123,20 +124,48 @@ test("Hermes rejects a conflicting operational skill target", async () => {
   }
 });
 
-test("Hermes rejects a live symlink owned by another operational skill", async () => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-hermes-core-link-conflict-"));
+test("Hermes repairs a live symlink owned by another managed Paperclip catalog", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-hermes-core-link-managed-"));
+  const pcHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-hermes-core-pc-"));
+  const prevPcHome = process.env.PAPERCLIP_HOME;
+  const prevInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
   try {
     const source = path.join(home, "runtime-skills", "paperclip");
-    const conflictingSource = path.join(home, "external-skills", "paperclip");
-    const target = path.join(home, ".hermes", "skills", "paperclip");
     await fs.mkdir(source, { recursive: true });
     await fs.writeFile(path.join(source, "SKILL.md"), "# Paperclip\n", "utf8");
-    await fs.mkdir(conflictingSource, { recursive: true });
-    await fs.writeFile(path.join(conflictingSource, "SKILL.md"), "# External skill\n", "utf8");
+    const target = path.join(home, ".hermes", "skills", "paperclip");
+    // Synthetic managed Paperclip catalog under a temp PAPERCLIP_HOME:
+    //   instances/<id>/skills/<companyId>/__versions__/<skillId>/<versionId>
+    const companyId = randomUUID();
+    const skillId = randomUUID();
+    const versionId = randomUUID();
+    const managedCatalog = path.join(
+      pcHome,
+      "instances",
+      "default",
+      "skills",
+      companyId,
+      "__versions__",
+      skillId,
+      versionId,
+    );
+    await fs.mkdir(managedCatalog, { recursive: true });
+    await fs.writeFile(
+      path.join(managedCatalog, "SKILL.md"),
+      "# Foreign managed skill\n",
+      "utf8",
+    );
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.symlink(conflictingSource, target);
+    // The slot's live symlink points into the foreign company's managed catalog.
+    await fs.symlink(managedCatalog, target);
+    // Point PAPERCLIP_HOME at the synthetic catalog so the reconciler's
+    // managed-catalog root resolves here; detection is by path shape.
+    process.env.PAPERCLIP_HOME = pcHome;
+    process.env.PAPERCLIP_INSTANCE_ID = "default";
     const adapter = createServerAdapter();
 
+    // A foreign managed-catalog point is repaired, not clobbering: it succeeds
+    // and the target is re-linked to the desired source.
     await expect(adapter.syncSkills?.({
       adapterType: "hermes_local",
       agentId: "11111111-1111-4111-8111-111111111111",
@@ -149,8 +178,14 @@ test("Hermes rejects a live symlink owned by another operational skill", async (
           source,
         }],
       },
-    }, [])).rejects.toThrow("occupied by another installation");
+    }, [])).resolves.toEqual(expect.anything());
+    expect(await fs.readlink(target)).toBe(source);
   } finally {
+    if (prevPcHome === undefined) delete process.env.PAPERCLIP_HOME;
+    else process.env.PAPERCLIP_HOME = prevPcHome;
+    if (prevInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+    else process.env.PAPERCLIP_INSTANCE_ID = prevInstanceId;
     await fs.rm(home, { recursive: true, force: true });
+    await fs.rm(pcHome, { recursive: true, force: true });
   }
 });

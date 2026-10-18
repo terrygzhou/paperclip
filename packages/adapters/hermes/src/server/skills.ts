@@ -12,6 +12,7 @@ import {
   readInstalledSkillTargets,
   readPaperclipRuntimeSkillEntries,
   resolveLegacyPaperclipDesiredSkillNames,
+  resolvePaperclipInstanceRootForAdapter,
 } from "@paperclipai/adapter-utils/server-utils";
 import { fileURLToPath } from "node:url";
 
@@ -233,7 +234,16 @@ export async function reconcileHermesPaperclipSkills(
   for (const entry of availableEntries) {
     if (!desiredSet.has(entry.key) || isPaperclipSkillSourceMissing(entry)) continue;
     const target = path.join(skillsHome, entry.runtimeName);
-    await ensurePaperclipSkillSymlink(entry.source, target);
+    const managedCatalogRoot = (() => {
+      try {
+        return resolvePaperclipInstanceRootForAdapter();
+      } catch {
+        return undefined;
+      }
+    })();
+    await ensurePaperclipSkillSymlink(entry.source, target, undefined, {
+      managedCatalogRoot,
+    });
     const linkedSource = await fs.readlink(target).catch(() => null);
     const resolvedSource = linkedSource
       ? path.resolve(path.dirname(target), linkedSource)
