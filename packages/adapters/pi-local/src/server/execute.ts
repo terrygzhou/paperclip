@@ -66,6 +66,40 @@ const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const PAPERCLIP_SESSIONS_DIR = path.join(os.homedir(), ".pi", "paperclips");
 const PI_AGENT_SKILLS_DIR = path.join(os.homedir(), ".pi", "agent", "skills");
 
+// Default Pi tool allowlist. The built-in tools are always included. `ctx_*`
+// re-enables the context-mode extension tool family (ctx_batch_execute,
+// ctx_execute_file, ctx_search, ...) that Paperclip agents are instructed to
+// use. Because pi's --tools flag is a STRICT allowlist, omitting it silently
+// strips the extension tools: the model then emits ctx_* calls as prose, they
+// never execute, and the run fails to record a disposition
+// (unchanged_source_state_exhausted). Re-enabling the family fixes that for
+// every headless run. MCP tools stay enabled unless the allowlist explicitly
+// starts with `mcp__`.
+const DEFAULT_PI_TOOLS = "read,bash,edit,write,grep,find,ls,ctx_*";
+
+// Fail-fast preflight for the empty/over-restricted tool-registry defect. When
+// the rendered prompt references the ctx_* extension tools but the effective
+// --tools allowlist omits that family, the agent's ctx_* calls will degrade to
+// prose and the run will not record a disposition. Surface it at launch so the
+// failure is a logged, diagnosable notice instead of a silent multi-minute dead
+// loop. Non-fatal by design: it warns; the default allowlist already includes
+// ctx_* so this only fires for an agent that set a restrictive `tools` config.
+const PI_EXTENSION_TOOL_FAMILY = "ctx_";
+function preflightToolRegistryWarning(renderedPrompt: string, allowlist: string): string | null {
+  const allowlistTokens = allowlist.split(",").map((token) => token.trim()).filter(Boolean);
+  const allowlistCoversFamily = allowlistTokens.some((token) => token.startsWith("ctx_") || token === "*");
+  const promptReferencesFamily = renderedPrompt.includes(PI_EXTENSION_TOOL_FAMILY);
+  if (promptReferencesFamily && !allowlistCoversFamily) {
+    return (
+      `[paperclip] tool-registry preflight: prompt references ${PI_EXTENSION_TOOL_FAMILY}* extension tools ` +
+      `but the --tools allowlist "${allowlist}" omits that family. The agent's ${PI_EXTENSION_TOOL_FAMILY}* ` +
+      `tool calls will be emitted as text and never execute, so the run may fail to record a disposition. ` +
+      `Add "ctx_*" to the allowlist (or omit the tools config to use the default).`
+    );
+  }
+  return null;
+}
+
 function firstNonEmptyLine(text: string): string {
   return (
     text
@@ -655,7 +689,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       if (modelId) args.push("--model", modelId);
       if (thinking) args.push("--thinking", thinking);
 
-      args.push("--tools", "read,bash,edit,write,grep,find,ls");
+      // Strict allowlist: built-ins + ctx_* extension family. An agent that
+      // set its own `tools` config controls the list; the default keeps the
+      // context-mode extension tools the agents are instructed to use.
+      const effectiveTools = asString(config.tools, "").trim() || DEFAULT_PI_TOOLS;
+      args.push("--tools", effectiveTools);
+
+      const preflightWarning = preflightToolRegistryWarning(renderedSystemPromptExtension + "\n" + userPrompt, effectiveTools);
+      if (preflightWarning) {
+        commandNotes.push(preflightWarning);
+      }
+
       args.push("--session", sessionFile);
       args.push("--skill", remoteSkillsDir ?? PI_AGENT_SKILLS_DIR);
 
