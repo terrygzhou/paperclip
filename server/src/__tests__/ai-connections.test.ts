@@ -1246,6 +1246,111 @@ console.log(JSON.stringify({ type: "result", subtype: "success", result: "hello"
       await expect(assertManagedAiProjectAuth({ args: ["--api-key=override"] }, "xai", target)).rejects.toThrow("overrides");
     } finally { execute.mockRestore(); }
   });
+
+  it("reports only a found conflict as configuration, naming the files to fix", async () => {
+    const execute = vi.spyOn(executionTarget, "runAdapterExecutionTargetProcess");
+    const target = { kind: "remote", transport: "sandbox", remoteCwd: "/workspace/project" } as Parameters<typeof assertManagedAiProjectAuth>[2];
+    const outcome = (exitCode: number | null, timedOut = false) =>
+      ({ exitCode, stdout: "", stderr: "", signal: null, timedOut }) as Awaited<ReturnType<typeof executionTarget.runAdapterExecutionTargetProcess>>;
+    try {
+      execute.mockResolvedValue(outcome(42));
+      const conflict = await assertManagedAiProjectAuth({}, "anthropic", target).catch((error: unknown) => error);
+      expect(isAiConnectionIncompatible(conflict)).toBe(true);
+      expect(String((conflict as Error).message)).toContain(".claude/settings.json");
+      // A check that could not complete is not proof of a configuration conflict.
+      for (const failed of [outcome(43), outcome(null, true), outcome(127)]) {
+        execute.mockResolvedValue(failed);
+        const unavailable = await assertManagedAiProjectAuth({}, "anthropic", target).catch((error: unknown) => error);
+        expect(unavailable).toBeInstanceOf(Error);
+        expect(isAiConnectionIncompatible(unavailable)).toBe(false);
+      }
+      expect(isAiConnectionIncompatible(await assertManagedAiProjectAuth({ args: ["--settings=x"] }, "anthropic", target).catch((error: unknown) => error))).toBe(true);
+    } finally { execute.mockRestore(); }
+  });
+  it("requires a typed project authentication capability for task-only environments", async () => {
+    const execute = vi.spyOn(executionTarget, "runAdapterExecutionTargetProcess");
+    const description = { kind: "description", taskId: "task", projectAuthCheckVersion: 1,
+      runner: { version: "fixture", digest: `sha256:${"a".repeat(64)}` } };
+    const task = vi.fn(async () => description);
+    const target = { kind: "remote", transport: "sandbox", remoteCwd: "/unused", runnerTask: task } as Parameters<typeof assertManagedAiProjectAuth>[2];
+    try {
+      await expect(assertManagedAiProjectAuth({}, "openai", target)).resolves.toBeUndefined();
+      await expect(assertManagedAiProjectAuth({ args: ["--api-key=override"] }, "openai", target)).rejects.toThrow("overrides");
+      expect(task).toHaveBeenCalledWith({ kind: "describe" });
+      task.mockResolvedValueOnce({ ...description, projectAuthCheckVersion: undefined } as never);
+      await expect(assertManagedAiProjectAuth({}, "openai", target)).rejects.toThrow("cannot validate");
+      expect(execute).not.toHaveBeenCalled();
+    } finally { execute.mockRestore(); }
+  });
+  it("defers new and retained plugin task capability checks to native launch", async () => {
+    const runnerTask = vi.fn().mockResolvedValue({ kind: "description", taskId: "task", projectAuthCheckVersion: 1,
+      runner: { version: "fixture", digest: `sha256:${"a".repeat(64)}` } });
+    const target = { kind: "remote", transport: "sandbox", providerKey: "plugin", remoteCwd: ".", runnerTask,
+      sandboxLeaseAcquisition: { outcome: "created", providerLeaseId: "task" } } as const;
+    const options = { deferRunnerTaskCapabilityCheck: true };
+
+    await expect(assertManagedAiProjectAuth({}, "openai", target, options)).resolves.toBeUndefined();
+    await expect(assertManagedAiProjectAuth({ args: ["--api-key=override"] }, "openai", target, options)).rejects.toThrow("overrides");
+    expect(runnerTask).not.toHaveBeenCalled();
+
+    const retained = { ...target, sandboxLeaseAcquisition: { ...target.sandboxLeaseAcquisition, outcome: "resumed" as const } };
+    await expect(assertManagedAiProjectAuth({}, "openai", retained, options)).resolves.toBeUndefined();
+    expect(runnerTask).not.toHaveBeenCalled();
+    await expect(assertManagedAiProjectAuth({}, "openai", retained)).resolves.toBeUndefined();
+    expect(runnerTask).toHaveBeenCalledExactlyOnceWith({ kind: "describe" });
+  });
+  it("Branch-2 remote probe on SSH target: fixture HOME isolation prevents finding user's real .codex/config.toml", async () => {
+    const execute = vi.spyOn(executionTarget, "runAdapterExecutionTargetProcess");
+    // Simulate an SSH target where remoteCwd is under the fixture home directory.
+    // The fixture sets HOME to its own directory (via SetEnv HOME=<homeDir> in sshd_config),
+    // so the upward walk from remoteCwd stays within the fixture root and never reaches
+    // the developer's real ~/.codex/config.toml.
+    const fixtureHome = "/tmp/ssh-fixture-home";
+    const sshTarget = {
+      kind: "remote",
+      transport: "ssh",
+      remoteCwd: `${fixtureHome}/workspace/project`,
+      spec: {
+        host: "127.0.0.1",
+        port: 22222,
+        username: "fixture-user",
+        remoteWorkspacePath: `${fixtureHome}/workspace`,
+        privateKey: null,
+        knownHosts: null,
+        strictHostKeyChecking: false,
+        remoteCwd: `${fixtureHome}/workspace/project`,
+      },
+    } as Parameters<typeof assertManagedAiProjectAuth>[2];
+
+    // Case 1: No .codex/config.toml in fixture HOME → probe exits 0, no conflict.
+    // This is the happy path after the fix: the upward walk is bounded by the
+    // fixture HOME and never finds the developer's real config.
+    execute.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "", signal: null, timedOut: false } as Awaited<ReturnType<typeof executionTarget.runAdapterExecutionTargetProcess>>);
+    await expect(assertManagedAiProjectAuth({}, "openai", sshTarget)).resolves.toBeUndefined();
+
+    // Verify the remote probe script was invoked with the correct remoteCwd and pattern
+    const [runId, targetArg, cmd, args, opts] = execute.mock.calls[0];
+    expect(cmd).toBe("sh");
+    expect(args[0]).toBe("-c");
+    // The script is args[1], followed by the positional arguments
+    expect(args).toContain(fixtureHome + "/workspace/project");
+    expect(args).toContain(".codex/config.toml");
+    // Verify env is passed as empty object (the script handles its own environment)
+    expect(opts.env).toEqual({});
+
+    // Case 2: .codex/config.toml EXISTS in the fixture HOME with model_provider = pattern
+    // → probe exits 42, function throws conflict error.
+    execute.mockResolvedValue({ exitCode: 42, stdout: "", stderr: "", signal: null, timedOut: false } as Awaited<ReturnType<typeof executionTarget.runAdapterExecutionTargetProcess>>);
+    await expect(assertManagedAiProjectAuth({}, "openai", sshTarget)).rejects.toThrow("project authentication settings");
+
+    // Case 3: grep error (exit 43) → also throws (indeterminate state treated as conflict)
+    execute.mockResolvedValue({ exitCode: 43, stdout: "", stderr: "", signal: null, timedOut: false } as Awaited<ReturnType<typeof executionTarget.runAdapterExecutionTargetProcess>>);
+    await expect(assertManagedAiProjectAuth({}, "openai", sshTarget)).rejects.toThrow("project authentication settings");
+
+    execute.mockRestore();
+  });
+
+
   it("keeps personal defaults separate and does not replace the first default", async () => {
     const first = await create("alice", "Alice first");
     await create("alice", "Alice second");
